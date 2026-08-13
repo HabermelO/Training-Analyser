@@ -6,13 +6,10 @@
 <title>Ride analysis</title>
 
 <!--
-  The import map is what makes a build step unnecessary. `fit.worker.js` and
-  `webllm.js` both use bare specifiers, which Node resolves from node_modules
-  and browsers cannot resolve at all. Mapping them here to a CDN is what lets
-  the same source run in both places unchanged.
-
-  Both are pinned to exact versions on purpose: an unpinned CDN import is a
-  silent remote dependency that can change under a deployed app.
+  Import maps apply to the main thread only — a module worker does NOT inherit
+  them. fit.worker.js therefore resolves its parser through
+  src/ingest/fitparser.js at runtime rather than relying on this map. The map
+  is still needed for anything the main thread imports by bare specifier.
 -->
 <script type="importmap">
 {
@@ -24,111 +21,76 @@
 </script>
 
 <style>
-  /* Instrument panel, not a dashboard. The reference is a head unit in
-     daylight: high contrast, data in a monospace face because columns of
-     numbers should align, everything else quiet. One signal colour, used
-     only where the app is telling you something it is not certain about. */
+  /* Instrument panel, not a dashboard. The reference is a head unit read in
+     daylight: high contrast, data set in a monospace face so columns of
+     numbers align, everything else kept quiet. One signal colour, used only
+     where the app is telling you something it is not certain about. */
   :root {
-    --ink:      #14181d;
-    --panel:    #1b2027;
-    --line:     #2b323b;
-    --text:     #e6e9ec;
-    --muted:    #8b959f;
-    --signal:   #e8b23a;   /* uncertainty, proposals, anything provisional */
-    --good:     #6fbf8b;
-    --warn:     #d9705f;
+    --ink:    #14181d;
+    --panel:  #1b2027;
+    --line:   #2b323b;
+    --text:   #e6e9ec;
+    --muted:  #8b959f;
+    --signal: #e8b23a;
+    --good:   #6fbf8b;
+    --warn:   #d9705f;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-
   * { box-sizing: border-box; }
-
-  body {
-    margin: 0;
-    background: var(--ink);
-    color: var(--text);
-    font: 15px/1.55 var(--sans);
-    -webkit-font-smoothing: antialiased;
-  }
-
+  body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
   main { max-width: 54rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
 
   header { border-bottom: 1px solid var(--line); padding-bottom: 1.25rem; margin-bottom: 2rem; }
-  h1 {
-    font: 600 1.05rem/1.2 var(--mono);
-    letter-spacing: .08em; text-transform: uppercase;
-    margin: 0 0 .35rem;
-  }
+  h1 { font: 600 1.05rem/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 .35rem; }
   header p { margin: 0; color: var(--muted); font-size: .9rem; }
 
-  h2 {
-    font: 600 .72rem/1 var(--mono);
-    letter-spacing: .12em; text-transform: uppercase;
-    color: var(--muted);
-    margin: 2.25rem 0 .85rem;
-    padding-bottom: .5rem;
-    border-bottom: 1px solid var(--line);
-  }
+  h2 { font: 600 .72rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+       margin: 2.25rem 0 .85rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
 
-  .drop {
-    border: 1px dashed var(--line);
-    border-radius: 3px;
-    padding: 2.5rem 1.5rem;
-    text-align: center;
-    color: var(--muted);
-    cursor: pointer;
-    transition: border-color .15s, color .15s;
-  }
+  .drop { border: 1px dashed var(--line); border-radius: 3px; padding: 2.5rem 1.5rem; text-align: center;
+          color: var(--muted); cursor: pointer; transition: border-color .15s, color .15s; }
   .drop:hover, .drop.over { border-color: var(--signal); color: var(--text); }
+  .drop:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
   .drop strong { color: var(--text); font-weight: 600; display: block; margin-bottom: .3rem; }
-  .drop input { display: none; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px;
+          background: var(--line); border: 1px solid var(--line); }
   .cell { background: var(--panel); padding: .85rem .9rem; }
   .cell .k { font: .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
   .cell .v { font: 400 1.5rem/1.2 var(--mono); margin-top: .35rem; }
   .cell .v small { font-size: .8rem; color: var(--muted); }
 
-  .banner {
-    border-left: 2px solid var(--signal);
-    background: var(--panel);
-    padding: .9rem 1rem;
-    margin: 1rem 0;
-  }
+  .banner { border-left: 2px solid var(--signal); background: var(--panel); padding: .9rem 1rem; margin: 1rem 0; }
   .banner.good { border-left-color: var(--good); }
   .banner.warn { border-left-color: var(--warn); }
   .banner h3 { margin: 0 0 .35rem; font: 600 .8rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
   .banner p { margin: 0 0 .5rem; font-size: .9rem; }
   .banner p:last-child { margin-bottom: 0; }
   .banner .caution { color: var(--signal); font-size: .85rem; }
+  .banner pre { margin: .5rem 0 0; font: .75rem/1.4 var(--mono); color: var(--muted); white-space: pre-wrap; }
 
-  button {
-    font: 600 .78rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase;
-    background: transparent; color: var(--text);
-    border: 1px solid var(--line); border-radius: 2px;
-    padding: .55rem .9rem; cursor: pointer;
-    transition: border-color .15s, background .15s;
-  }
+  button { font: 600 .78rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; background: transparent;
+           color: var(--text); border: 1px solid var(--line); border-radius: 2px; padding: .55rem .9rem;
+           cursor: pointer; transition: border-color .15s, background .15s; }
   button:hover { border-color: var(--signal); }
   button.primary { background: var(--signal); border-color: var(--signal); color: var(--ink); }
   button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  button[disabled] { opacity: .4; cursor: default; }
   .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; }
 
-  label { display: block; font: .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: .3rem; }
-  input[type=number] {
-    font: 400 1rem var(--mono); background: var(--ink); color: var(--text);
-    border: 1px solid var(--line); border-radius: 2px; padding: .5rem .6rem; width: 100%;
-  }
+  label { display: block; font: .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+          color: var(--muted); margin-bottom: .3rem; }
+  input[type=number] { font: 400 1rem var(--mono); background: var(--ink); color: var(--text);
+          border: 1px solid var(--line); border-radius: 2px; padding: .5rem .6rem; width: 100%; }
   input[type=number]:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
   .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .75rem; margin-bottom: .9rem; }
 
-  table { width: 100%; border-collapse: collapse; font: .85rem var(--mono); }
-  td, th { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-weight: 400; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
-  td.n { text-align: right; }
-
   .prose { background: var(--panel); padding: 1.1rem 1.2rem; border-left: 2px solid var(--line); font-size: .95rem; }
-  .prose .src { display: block; margin-top: .8rem; font: .68rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .prose p { margin: 0 0 .7rem; }
+  .prose p:last-of-type { margin-bottom: 0; }
+  .prose .src { display: block; margin-top: .8rem; font: .68rem var(--mono); letter-spacing: .08em;
+                text-transform: uppercase; color: var(--muted); }
 
   .muted { color: var(--muted); font-size: .87rem; }
   .hidden { display: none; }
@@ -145,6 +107,15 @@
     <p>Runs entirely on this device. Nothing is uploaded.</p>
   </header>
 
+  <!-- Shown by the handlers at the bottom of the page. A module that fails to
+       load otherwise leaves a page that looks fine and does nothing, with the
+       only evidence in a console the user has no reason to open. -->
+  <div id="boot-error" class="banner warn hidden">
+    <h3>The app did not start</h3>
+    <p id="boot-error-msg"></p>
+    <pre id="boot-error-detail"></pre>
+  </div>
+
   <section id="onboarding">
     <h2>What you already know</h2>
     <p class="muted">All optional. Leave blank and the app works it out from your rides.</p>
@@ -157,17 +128,60 @@
 
   <section>
     <h2>Ride file</h2>
+    <!-- The file input sits OUTSIDE the drop zone deliberately. Nested inside,
+         its own click event bubbles up to the zone's handler, which calls
+         click() on it again; browsers suppress the resulting loop and the
+         picker silently never opens. -->
     <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a FIT file">
       <strong>Choose a .fit file</strong>
       or drag one here
-      <input type="file" id="file" accept=".fit">
     </div>
+    <input type="file" id="file" accept=".fit,application/octet-stream" class="hidden">
     <p class="muted" id="status"></p>
   </section>
 
   <section id="results" class="hidden"></section>
 </main>
 
-<script type="module" src="./src/app.js"></script>
+<script>
+  // Registered before the module loads, so a module that throws on import is
+  // still reported. Both handlers are needed: a failed import surfaces as an
+  // 'error' event in some browsers and an unhandled rejection in others.
+  (function () {
+    var shown = false;
+    function show(msg, detail) {
+      if (shown) return;
+      shown = true;
+      var box = document.getElementById('boot-error');
+      if (!box) return;
+      box.classList.remove('hidden');
+      document.getElementById('boot-error-msg').textContent = msg;
+      document.getElementById('boot-error-detail').textContent = detail || '';
+    }
+    window.addEventListener('error', function (e) {
+      if (e.target && e.target.tagName === 'SCRIPT') {
+        show('A script failed to load. Check that the paths in the repository match the ones in index.html.', e.target.src || '');
+      } else if (e.message) {
+        show(e.message, (e.filename || '') + (e.lineno ? ':' + e.lineno : ''));
+      }
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      show('Something failed while starting up.', (e.reason && (e.reason.stack || e.reason.message)) || String(e.reason));
+    });
+    window.__bootError = show;
+  })();
+</script>
+
+<script type="module">
+  // Imported dynamically rather than via a src attribute so that an import
+  // failure is catchable and can be shown on the page instead of only in the
+  // console.
+  import('./src/app.js').catch(function (err) {
+    window.__bootError(
+      'The app module failed to load. This is almost always a wrong path or a file that was not committed.',
+      (err && (err.stack || err.message)) || String(err)
+    );
+  });
+</script>
 </body>
 </html>

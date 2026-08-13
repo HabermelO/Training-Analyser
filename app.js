@@ -65,8 +65,18 @@ syncOnboarding();
 // --- file intake -------------------------------------------------------
 
 const drop = $('drop');
-drop.addEventListener('click', () => $('file').click());
-drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
+const filePicker = $('file');
+
+// The input lives outside the drop zone in the markup, so this cannot loop
+// back on itself. Keeping the guard anyway: if the markup is ever changed to
+// nest it, the failure is silent and very hard to spot.
+drop.addEventListener('click', (e) => {
+  if (e.target === filePicker) return;
+  filePicker.click();
+});
+drop.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); filePicker.click(); }
+});
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', (e) => {
@@ -75,12 +85,24 @@ drop.addEventListener('drop', (e) => {
   const f = e.dataTransfer.files?.[0];
   if (f) handleFile(f);
 });
-$('file').addEventListener('change', (e) => {
+filePicker.addEventListener('change', (e) => {
   const f = e.target.files?.[0];
   if (f) handleFile(f);
+  // Reset, or selecting the same file twice in a row fires no change event.
+  e.target.value = '';
 });
 
 async function handleFile(file) {
+  try {
+    await ingest(file);
+  } catch (e) {
+    // Anything unexpected reaches the page rather than only the console.
+    status(`Something went wrong reading that ride: ${e?.message || e}`);
+    console.error(e);
+  }
+}
+
+async function ingest(file) {
   if (!/\.fit$/i.test(file.name)) {
     return status('That is not a .fit file. Export the ride from your head unit or Strava and try again.');
   }

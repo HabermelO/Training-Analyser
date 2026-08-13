@@ -5,7 +5,7 @@
 // it produces the same shape a manual entry form would, and buildVerdict()
 // takes it from there.
 
-import FitParser from 'fit-file-parser';
+import { loadFitParser } from './fitparser.js';
 import { buildRide } from './metrics.js';
 
 function normaliseRecords(records) {
@@ -44,7 +44,8 @@ function normaliseLaps(laps = []) {
     }));
 }
 
-export function parseFitBuffer(buffer, athlete = {}, opts = {}) {
+export async function parseFitBuffer(buffer, athlete = {}, opts = {}) {
+  const FitParser = await loadFitParser();
   return new Promise((resolve, reject) => {
     const parser = new FitParser({
       force: true,               // salvage what we can from a truncated file
