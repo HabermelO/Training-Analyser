@@ -5,13 +5,13 @@
 // deployment: the whole point of the app is that nothing leaves the device, and
 // a key-value store is enough until the ride count makes it awkward.
 
-import { parseFitFile } from './ingest/index.js';
-import { deriveAthlete, explainProfile } from './engine/athlete.js';
-import { buildVerdict } from './engine/verdict.js';
-import { proposeFromRide, acceptProposal, rejectProposal, onboardingProfile } from './engine/proposals.js';
-import { assessThresholdStanding, allowDownwardProposal } from './engine/standing.js';
-import { narrate } from './llm/index.js';
-import { createGenerator } from './llm/webllm.js';
+import { parseFitFile } from './ingest.js';
+import { deriveAthlete, explainProfile } from './athlete.js';
+import { buildVerdict } from './verdict.js';
+import { proposeFromRide, acceptProposal, rejectProposal, onboardingProfile } from './proposals.js';
+import { assessThresholdStanding, allowDownwardProposal } from './standing.js';
+import { narrate } from './narration.js';
+import { createGenerator } from './webllm.js';
 
 const KEY = { rides: 'rides.v1', decisions: 'decisions.v1', profile: 'profile.v1' };
 

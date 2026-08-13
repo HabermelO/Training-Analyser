@@ -1,4 +1,4 @@
-import { POWER_ZONES, DEFAULT_ATHLETE } from '../engine/thresholds.js';
+import { POWER_ZONES, DEFAULT_ATHLETE } from './thresholds.js';
 
 // Everything here is pure: samples in, ride object out. No FIT decoding, no
 // DOM, no worker APIs — so it can be unit-tested against synthetic rides and

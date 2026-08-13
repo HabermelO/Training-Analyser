@@ -9,7 +9,7 @@
 // Deliberately generator-agnostic — pass the WebLLM generate() in a browser,
 // or an injected one in node. The harness has no opinion about which.
 
-import { narrate } from './index.js';
+import { narrate } from './narration.js';
 import { validateNarration } from './guard.js';
 
 /**
