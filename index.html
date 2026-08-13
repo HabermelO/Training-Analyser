@@ -144,44 +144,81 @@
 </main>
 
 <script>
-  // Registered before the module loads, so a module that throws on import is
-  // still reported. Both handlers are needed: a failed import surfaces as an
-  // 'error' event in some browsers and an unhandled rejection in others.
+  // "Importing a module script failed" is all the browser tells you when any
+  // file in the graph 404s — it never names the file. So before importing
+  // anything, HEAD every module the app needs and report exactly which ones
+  // are missing, with the URL that was tried. A wrong path is by far the most
+  // common deployment failure and this turns it from a guess into a list.
   (function () {
+    var MODULES = [
+      'src/app.js',
+      'src/data/workouts.js',
+      'src/engine/athlete.js',
+      'src/engine/classify.js',
+      'src/engine/execution.js',
+      'src/engine/ftp.js',
+      'src/engine/load.js',
+      'src/engine/planner.js',
+      'src/engine/proposals.js',
+      'src/engine/readiness.js',
+      'src/engine/standing.js',
+      'src/engine/thresholds.js',
+      'src/engine/verdict.js',
+      'src/ingest/fit.worker.js',
+      'src/ingest/fitparser.js',
+      'src/ingest/index.js',
+      'src/ingest/metrics.js',
+      'src/llm/guard.js',
+      'src/llm/index.js',
+      'src/llm/narrate.js',
+      'src/llm/webllm.js'
+    ];
+
     var shown = false;
     function show(msg, detail) {
       if (shown) return;
       shown = true;
       var box = document.getElementById('boot-error');
-      if (!box) return;
       box.classList.remove('hidden');
       document.getElementById('boot-error-msg').textContent = msg;
       document.getElementById('boot-error-detail').textContent = detail || '';
     }
+    window.__bootError = show;
+
     window.addEventListener('error', function (e) {
-      if (e.target && e.target.tagName === 'SCRIPT') {
-        show('A script failed to load. Check that the paths in the repository match the ones in index.html.', e.target.src || '');
-      } else if (e.message) {
-        show(e.message, (e.filename || '') + (e.lineno ? ':' + e.lineno : ''));
-      }
+      if (e.message) show(e.message, (e.filename || '') + (e.lineno ? ':' + e.lineno : ''));
     }, true);
     window.addEventListener('unhandledrejection', function (e) {
-      show('Something failed while starting up.', (e.reason && (e.reason.stack || e.reason.message)) || String(e.reason));
+      show('Something failed while starting up.',
+           (e.reason && (e.reason.stack || e.reason.message)) || String(e.reason));
     });
-    window.__bootError = show;
-  })();
-</script>
 
-<script type="module">
-  // Imported dynamically rather than via a src attribute so that an import
-  // failure is catchable and can be shown on the page instead of only in the
-  // console.
-  import('./src/app.js').catch(function (err) {
-    window.__bootError(
-      'The app module failed to load. This is almost always a wrong path or a file that was not committed.',
-      (err && (err.stack || err.message)) || String(err)
-    );
-  });
+    var base = new URL('.', location.href).href;
+
+    Promise.all(MODULES.map(function (path) {
+      return fetch(base + path, { method: 'HEAD' })
+        .then(function (r) { return { path: path, ok: r.ok, status: r.status }; })
+        .catch(function () { return { path: path, ok: false, status: 'network error' }; });
+    })).then(function (results) {
+      var missing = results.filter(function (r) { return !r.ok; });
+
+      if (missing.length) {
+        show(
+          missing.length + ' of ' + MODULES.length + ' files could not be found. ' +
+          'The paths below are relative to ' + base + ' — check the folder layout in the repository matches.',
+          missing.map(function (r) { return r.status + '  ' + r.path; }).join('\n')
+        );
+        return;
+      }
+
+      // Everything is present, so any failure from here is real code, not a
+      // missing file.
+      import('./src/app.js').catch(function (err) {
+        show('Every file was found, but the app still failed to start. That points at the code rather than the deployment.',
+             (err && (err.stack || err.message)) || String(err));
+      });
+    });
+  })();
 </script>
 </body>
 </html>
