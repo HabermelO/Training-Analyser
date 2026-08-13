@@ -1,0 +1,108 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>narration source audit</title>
+<style>
+  body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+  button { font: inherit; padding: .4rem .8rem; }
+  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; white-space: pre-wrap; }
+  progress { width: 100%; }
+</style>
+
+<h1>narration source audit</h1>
+<p>
+  Runs the same scenarios and the same summary code as <code>test/sources.js</code>,
+  but against a real model on this device. These are the numbers that decide
+  whether the prompt or the guard is the limiting factor.
+</p>
+
+<p>
+  <label>model
+    <select id="model"><option value="small">1B</option><option value="medium">3B</option></select>
+  </label>
+  <label><input type="checkbox" id="repair" checked> repair pass</label>
+  <label>runs <input type="number" id="runs" value="2" min="1" max="10" style="width:4rem"></label>
+  <button id="go">run</button>
+</p>
+
+<progress id="bar" value="0" max="1"></progress>
+<pre id="out">idle</pre>
+
+<script type="module">
+import { createGenerator } from '../src/llm/webllm.js';
+import { auditSources, formatReport, interpret } from '../src/llm/audit.js';
+import { scenarios } from './scenarios.js';
+
+const out = document.getElementById('out');
+const bar = document.getElementById('bar');
+const say = (s) => (out.textContent = s);
+
+document.getElementById('go').onclick = async () => {
+  const cases = scenarios();
+  say('checking device support…');
+
+  const generate = await createGenerator({
+    model: document.getElementById('model').value,
+    onUnsupported: (s) => say(`unsupported: ${s.reason}\n\nThe app still works — every verdict will render through the template path. That is the floor, and it is a valid product state, not a failure.`),
+    onProgress: ({ progress, text }) => {
+      bar.value = progress;
+      say(`loading model ${Math.round(progress * 100)}%\n${text}`);
+    },
+  });
+
+  // createGenerator returns null on unsupported devices. Running the audit
+  // anyway is deliberate: it measures the template floor on this hardware,
+  // which is exactly what those users will see.
+  if (!generate) bar.value = 0;
+
+  const t0 = performance.now();
+  const { rows, summary } = await auditSources({
+    verdicts: cases,
+    generate,
+    runs: Number(document.getElementById('runs').value),
+    repair: document.getElementById('repair').checked,
+    timeoutMs: 30000,
+    onProgress: ({ done, total, scenario, source }) => {
+      bar.value = done / total;
+      say(`${done}/${total}  ${scenario} → ${source}`);
+    },
+  });
+
+  const perScenario = {};
+  for (const r of rows) (perScenario[r.scenario] ||= []).push(r.source);
+
+  say([
+    formatReport(summary),
+    '',
+    '--- per scenario ---',
+    ...Object.entries(perScenario).map(([k, v]) => `  ${k.padEnd(32)} ${v.join(' ')}`),
+    '',
+    '--- reading ---',
+    ...interpret(summary).map((n) => `  * ${n}`),
+    '',
+    `wall clock ${Math.round((performance.now() - t0) / 1000)}s`,
+    '',
+    '--- rejected text, first occurrence per token ---',
+    ...dedupeRejections(rows),
+  ].join('\n'));
+
+  window.__audit = { rows, summary };
+  console.log('rows on window.__audit');
+};
+
+// The actual prose matters more than the count: a token rejected because the
+// model computed something is a different problem from one it misread.
+function dedupeRejections(rows) {
+  const seen = new Set();
+  const lines = [];
+  for (const r of rows) {
+    for (const v of r.rejected) {
+      const k = `${v.kind}:${v.token}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      lines.push(`  [${r.scenario}] ${v.token} — ${v.detail}`);
+    }
+  }
+  return lines.length ? lines : ['  none'];
+}
+</script>
