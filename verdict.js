@@ -52,6 +52,8 @@ export function buildVerdict(input) {
     phenotype,
     load,
     asOf,
+    athlete,
+    ftpEstimate: ftp,
     longRideDay: input.longRideDay,
   });
 

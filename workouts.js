@@ -1,6 +1,13 @@
 // The planner selects from this library. It is deliberately data, not prose,
 // so a small model can never invent a session that does not exist.
 //
+// Entries store STRUCTURE, not numbers: reps, durations, and fractions of the
+// athlete's critical power. `durationMin`, `tss` and `if` are kept only as
+// nominal values (roughly what the session comes to at CP 240) for callers
+// that have no threshold to prescribe against yet — prescribe.js turns the
+// `work` block into the athlete's own watts and TSS, which is the only version
+// the volume cap in planner.js should ever be doing arithmetic on.
+//
 // NOTE: verify the `systm` names against your own SYSTM library before
 // shipping and prune anything you don't actually have access to. Every entry
 // needs an outdoor equivalent that drives the SAME adaptation — that is the
@@ -25,6 +32,8 @@ export const WORKOUTS = [
     durationMin: 45,
     tss: 25,
     if: 0.55,
+    warmupMin: 0, cooldownMin: 0,
+    work: { reps: 1, onMin: 45, offMin: 0, onPctCp: 0.55 },
     outdoor: {
       name: 'Flat easy spin',
       prescription:
@@ -38,6 +47,8 @@ export const WORKOUTS = [
     durationMin: 180,
     tss: 150,
     if: 0.65,
+    warmupMin: 0, cooldownMin: 0,
+    work: { reps: 1, onMin: 180, offMin: 0, onPctCp: 0.68 },
     outdoor: {
       name: 'Long steady ride',
       prescription:
@@ -51,6 +62,8 @@ export const WORKOUTS = [
     durationMin: 105,
     tss: 85,
     if: 0.68,
+    warmupMin: 0, cooldownMin: 0,
+    work: { reps: 1, onMin: 105, offMin: 0, onPctCp: 0.68 },
     outdoor: {
       name: 'Rolling endurance',
       prescription:
@@ -64,6 +77,8 @@ export const WORKOUTS = [
     durationMin: 75,
     tss: 78,
     if: 0.82,
+    warmupMin: 15, cooldownMin: 10,
+    work: { reps: 3, onMin: 15, offMin: 5, onPctCp: 0.90, offPctCp: 0.50 },
     outdoor: {
       name: '3 x 15 min sweet spot',
       prescription:
@@ -77,6 +92,8 @@ export const WORKOUTS = [
     durationMin: 80,
     tss: 92,
     if: 0.86,
+    warmupMin: 15, cooldownMin: 10,
+    work: { reps: 2, onMin: 20, offMin: 8, onPctCp: 1.00, offPctCp: 0.50 },
     outdoor: {
       name: '2 x 20 min at FTP',
       prescription:
@@ -90,6 +107,8 @@ export const WORKOUTS = [
     durationMin: 75,
     tss: 85,
     if: 0.85,
+    warmupMin: 15, cooldownMin: 10,
+    work: { reps: 3, onMin: 9, offMin: 5, onPctCp: 0.98, offPctCp: 0.50 },
     outdoor: {
       name: '3 x 9 min over-under',
       prescription:
@@ -103,6 +122,8 @@ export const WORKOUTS = [
     durationMin: 65,
     tss: 80,
     if: 0.88,
+    warmupMin: 15, cooldownMin: 10,
+    work: { reps: 5, onMin: 3, offMin: 3, onPctCp: 1.12, offPctCp: 0.45 },
     outdoor: {
       name: '5 x 3 min maximal',
       prescription:
@@ -116,6 +137,8 @@ export const WORKOUTS = [
     durationMin: 70,
     tss: 84,
     if: 0.87,
+    warmupMin: 15, cooldownMin: 10,
+    work: { reps: 4, onMin: 5, offMin: 5, onPctCp: 1.06, offPctCp: 0.45 },
     outdoor: {
       name: '4 x 5 min hard',
       prescription:
@@ -129,6 +152,8 @@ export const WORKOUTS = [
     durationMin: 60,
     tss: 70,
     if: 0.83,
+    warmupMin: 15, cooldownMin: 10,
+    work: { reps: 8, onMin: 0.75, offMin: 3, onPctCp: 1.50, offPctCp: 0.40 },
     outdoor: {
       name: '8 x 45s maximal',
       prescription:
@@ -142,6 +167,8 @@ export const WORKOUTS = [
     durationMin: 45,
     tss: 35,
     if: 0.62,
+    warmupMin: 15, cooldownMin: 10,
+    work: { reps: 6, onMin: 0.167, offMin: 4, onPctCp: 2.00, offPctCp: 0.50 },
     outdoor: {
       name: 'Openers with sprints',
       prescription:

@@ -11,7 +11,9 @@ import { parseFitFile } from './ingest.js';
 import { store, summariseRide } from './store.js';
 import { deriveAthlete } from './athlete.js';
 import { buildVerdict } from './verdict.js';
-import { proposeFromRide, acceptProposal, rejectProposal } from './proposals.js';
+import {
+  proposeFromRide, proposeFromStanding, stalenessPrompt, acceptProposal, rejectProposal,
+} from './proposals.js';
 import { assessThresholdStanding, allowDownwardProposal } from './standing.js';
 import { narrate } from './narration.js';
 import { createGenerator } from './webllm.js';
@@ -229,7 +231,19 @@ function renderProposals(root, ride, profile, ctx) {
   if (!allowDownwardProposal(standing)) {
     proposals = proposals.filter((p) => p.direction !== 'down');
   }
-  if (standing.proposal) proposals = [standing.proposal, ...proposals];
+  // The efficiency route into FTP. standing.js's own bump is the more heavily
+  // gated of the two and covers the same evidence, so it takes precedence —
+  // the athlete should be asked once, not twice about the same trend.
+  if (standing.proposal) {
+    proposals = [standing.proposal, ...proposals];
+  } else {
+    proposals = [
+      ...proposeFromStanding(standing, profile, store.decisions()),
+      ...proposals,
+    ];
+  }
+
+  const stale = stalenessPrompt(standing, { pendingProposals: proposals });
 
   if (standing.message && standing.standing !== 'unknown') {
     const s = card('Threshold standing');
@@ -237,6 +251,13 @@ function renderProposals(root, ride, profile, ctx) {
       badge(fmt.title(standing.standing), standing.standing === 'holding' ? 'good' : 'signal'));
     s.body.append(el('p', null, standing.message));
     if (standing.action?.suggestion) s.body.append(note(standing.action.suggestion, 'signal'));
+    root.append(s);
+  }
+
+  if (stale) {
+    const s = card('Threshold age');
+    s.body.append(el('div', 'standing-head')).append(badge(`${stale.ageDays} days`, 'signal'));
+    s.body.append(el('p', null, stale.message));
     root.append(s);
   }
 

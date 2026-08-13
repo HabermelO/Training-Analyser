@@ -44,13 +44,28 @@ export const SESSION = {
 };
 
 export const READINESS = {
-  baselineDays: 7,
+  // z-score path (primary). Baseline is on ln(rMSSD) because rMSSD is
+  // log-normal: a 10% drop and a 10% rise are not equally surprising raw.
+  baselineDays: 30,
+  shortWindowDays: 7,      // today = mean of last 7 days, not a single reading
+  minBaselineDays: 14,     // below this many readings, use the % fallback
+  zSuppressed: -0.75,
+  zStronglySuppressed: -1.5,
+  zFresh: 0.75,
+  // Guard against a degenerate baseline in an unusually flat stretch — an SD
+  // this small would turn ordinary noise into a strong flag.
+  minBaselineSd: 0.02,     // in ln units (~2%)
+
+  // Percentage path (fallback only, while the baseline is still filling)
+  fallbackBaselineDays: 7,
   hrvSuppressedPct: -8,    // % below rolling baseline
   hrvStronglySuppressedPct: -15,
+
+  // Independent escalators
   rhrElevatedBpm: 5,
   sleepShortHours: 6.5,
   moodLowScore: 4,         // on a 1-10 scale
-  consecutiveDaysForFlag: 2,
+  consecutiveDaysForFlag: 3,
 };
 
 export const LOAD = {
@@ -72,4 +87,46 @@ export const FTP_MODEL = {
   // An effort only counts as maximal if HR got close to max
   maximalEffortHrPct: 0.90,
   confidenceLabels: ['insufficient', 'low', 'moderate', 'good'],
+};
+
+export const PRESCRIPTION = {
+  // Fractions of the anchor used for the parts of a session the library does
+  // not specify, because nobody cares what wattage a warmup is.
+  warmupPctCp: 0.55,
+  cooldownPctCp: 0.50,
+  // W' reconstitutes below CP, but not instantly and not perfectly. This is a
+  // deliberately blunt linear stand-in for the exponential recovery model.
+  reconstitutionEfficiency: 0.55,
+  // Gross W' cost above this multiple of the athlete's own fitted W' means the
+  // session is not finishable as written, and reps come off until it is.
+  wPrimeCeilingMultiple: 1.4,
+  minReps: 2,
+};
+
+export const PHASE = {
+  // 3:1 loading — three ramping weeks, then a scheduled unload.
+  blockWeeks: 4,
+  recoveryWeekFraction: 0.6,
+  recoveryWeekHardBudget: 1,
+  // With no goal date, alternate base/build blocks of this many weeks.
+  noGoalBlockWeeks: 8,
+  // Days-to-goal boundaries (upper bound of each phase, walking inward).
+  taperDays: 14,
+  peakDays: 28,
+  buildDays: 84,
+  // Per-week ramp by phase, capped by LOAD.maxWeeklyRampPct.
+  rampPctByPhase: {
+    base: 8,
+    build: 6,
+    peak: 3,
+    taper: 0,
+    transition: 0,
+  },
+  intensityBias: {
+    base:       { hardBudget: 2, favours: ['threshold_tte', 'lactate_clearance', 'vo2max'] },
+    build:      { hardBudget: 3, favours: ['vo2max', 'lactate_clearance', 'threshold_tte'] },
+    peak:       { hardBudget: 3, favours: ['vo2max', 'threshold_tte', 'lactate_clearance'] },
+    taper:      { hardBudget: 2, favours: ['vo2max', 'threshold_tte', 'lactate_clearance'], preferShortHard: true },
+    transition: { hardBudget: 0, favours: ['threshold_tte', 'vo2max', 'lactate_clearance'] },
+  },
 };

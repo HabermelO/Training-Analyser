@@ -1,14 +1,23 @@
 import { WORKOUTS, byId } from './workouts.js';
 import { intensityAllowance } from './readiness.js';
+import { computePhase } from './phase.js';
+import { prescriber } from './prescribe.js';
 
 // Builds the next 7 days by constrained selection, never by generation.
 // Rules, in order of authority:
-//   1. Readiness caps the number of hard days.
+//   0. The phase sets the week's ambition: volume target and hard-day budget.
+//   1. Readiness caps the number of hard days — it is a veto, never a licence.
 //   2. Hard days are never consecutive, and never the day before the long ride.
 //   3. No rest days — easy days are active recovery.
 //   4. Only one long ride per week; other easy days stay short.
 //   5. Adaptation focus from phenotype bias + gaps in the last 30 days.
 //   6. Variety: prefer a workout not already used this week.
+//
+// Load arithmetic is done on PRESCRIBED TSS — the session as it will actually
+// be ridden by this athlete against their own CP — not the library's nominal
+// constants. The same 4 x 5 min is a different amount of work at CP 200 and at
+// CP 320, and comparing a real last7dTss against a fixed 84 was comparing a
+// measurement to a decoration.
 
 const HARD_ADAPTATIONS = ['vo2max', 'threshold_tte', 'lactate_clearance', 'anaerobic_capacity'];
 const isHard = (a) => HARD_ADAPTATIONS.includes(a);
@@ -42,9 +51,29 @@ export function planWeek(ctx) {
   const counts = recentAdaptationCounts(ctx.rides || [], 30, asOf);
   const rationale = [allowance.note];
 
-  // Least-trained hard adaptations first.
+  // Where the athlete is in a progression. Passed in where the caller already
+  // has one, otherwise derived here from the profile so no call site is
+  // obliged to change.
+  const phase =
+    ctx.phase ||
+    computePhase({
+      goalDate: ctx.profile?.goalDate,
+      startedAt: ctx.profile?.trainingStartedAt,
+      load: ctx.load,
+      asOf,
+    });
+  rationale.push(...(phase.reasons || []));
+
+  // Least-trained hard adaptations first, then the phase gets the casting
+  // vote: rotating least-trained-first forever is what produced a permanent
+  // maintenance week with no block structure.
+  const favours = phase.intensityBias?.favours || [];
   const hardPriority = ['vo2max', 'threshold_tte', 'lactate_clearance']
-    .sort((a, b) => (counts[a] || 0) - (counts[b] || 0));
+    .sort((a, b) => (counts[a] || 0) - (counts[b] || 0))
+    .sort((a, b) => {
+      const ai = favours.indexOf(a), bi = favours.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
 
   const pheno = ctx.phenotype?.label;
   if (pheno === 'time_trial_diesel') {
@@ -55,7 +84,15 @@ export function planWeek(ctx) {
     rationale.push('strong top end, so threshold TTE leads the week');
   }
 
-  let hardBudget = allowance.maxSessionsHard;
+  // Readiness stays a veto, never a licence: the phase says how hard the week
+  // is allowed to be, and readiness can only scale that down.
+  let hardBudget = Math.min(
+    allowance.maxSessionsHard,
+    phase.intensityBias?.hardBudget ?? allowance.maxSessionsHard
+  );
+  if (phase.isRecoveryWeek) {
+    rationale.push('scheduled recovery week, so intensity is held back by design rather than in reaction');
+  }
   if (ctx.load?.state === 'deep_hole') {
     hardBudget = Math.min(hardBudget, 1);
     rationale.push('TSB deeply negative, so intensity is capped regardless of markers');
@@ -63,6 +100,19 @@ export function planWeek(ctx) {
   if (ctx.load?.rampWarning) {
     rationale.push(`weekly load ramped ${ctx.load.rampPct}%, so volume is held flat`);
   }
+
+  // One anchor for the week, results cached per workout id. Falls back to
+  // %FTP where CP is untrustworthy, and to the library's nominal numbers where
+  // there is no threshold at all.
+  const rx = prescriber({
+    cp: ctx.ftpEstimate?.value ?? ctx.athlete?.cp,
+    wPrimeKj: ctx.ftpEstimate?.wPrimeKj ?? ctx.athlete?.wPrimeKj,
+    cpConfidence: ctx.ftpEstimate?.confidence,
+    cpSource: ctx.ftpEstimate?.basis === 'critical_power_2p' ? 'modelled' : 'declared',
+    ftp: ctx.athlete?.ftp ?? ctx.profile?.ftp,
+  });
+  const tssOf = (d) => rx(d?.workout)?.tss ?? d?.workout?.tss ?? 0;
+  const minsOf = (d) => rx(d?.workout)?.durationMin ?? d?.workout?.durationMin ?? 0;
 
   const used = new Set();
   const pick = selector(used);
@@ -121,14 +171,20 @@ export function planWeek(ctx) {
 
   // Volume cap. Without this, dropping intensity can paradoxically INCREASE
   // weekly load, because easy days get filled with endurance rides.
-  const baseline = ctx.load?.last7dTss || (ctx.load?.ctl ? ctx.load.ctl * 7 : null);
+  // The cap baseline is the phase's target, not last week's actual. Deriving
+  // it from last7dTss meant the plan tracked whatever happened and CTL drifted
+  // wherever it drifted — a ramp warning with no ramp target.
+  const baseline =
+    phase.weeklyTssTarget ||
+    ctx.load?.last7dTss ||
+    (ctx.load?.ctl ? ctx.load.ctl * 7 : null);
   const scale =
     { strongly_suppressed: 0.6, suppressed: 0.85, fresh: 1.1 }[
       ctx.readiness?.flag
     ] ?? 1.0;
   const cap = baseline ? baseline * scale : null;
 
-  const totalTss = () => days.reduce((s, d) => s + (d.workout?.tss || 0), 0);
+  const totalTss = () => days.reduce((s, d) => s + tssOf(d), 0);
 
   // A cap is a target, not a limit, and the last few TSS are not worth what it
   // costs to shed them. Without this tolerance the ordered sacrifice below
@@ -221,7 +277,7 @@ export function planWeek(ctx) {
 
   const plannedTss = totalTss();
   const plannedHours = Number(
-    (days.reduce((s, d) => s + (d.workout?.durationMin || 0), 0) / 60).toFixed(1)
+    (days.reduce((s, d) => s + minsOf(d), 0) / 60).toFixed(1)
   );
 
   // Whether the cap was actually achieved. A plan that quietly overshoots its
@@ -240,6 +296,33 @@ export function planWeek(ctx) {
     );
   }
 
+  // Hang the prescription off each day so the UI can show watts rather than a
+  // workout name, and so a reduced-rep session carries its own reason.
+  for (const d of days) {
+    const p = rx(d.workout);
+    if (!p) continue;
+    d.prescription = p;
+    if (p.repsDropped > 0 || p.feasible === false) {
+      d.note = d.note ? `${d.note}; ${p.note}` : p.note;
+    }
+  }
+
+  if (rx.anchor?.basis === 'cp') {
+    cleanedRationale.push(
+      `sessions prescribed against your fitted CP of ${Math.round(rx.anchor.watts)} W`
+    );
+  } else if (rx.anchor?.basis === 'ftp') {
+    cleanedRationale.push(
+      'sessions prescribed as %FTP — there is no trustworthy critical power fit yet, so targets are approximate'
+    );
+  }
+  const trimmed = days.filter((d) => d.prescription?.repsDropped > 0).length;
+  if (trimmed > 0) {
+    cleanedRationale.push(
+      `${trimmed} session${trimmed === 1 ? '' : 's'} shortened by a rep to stay inside your fitted W'`
+    );
+  }
+
   const capRespected = cap == null ? null : plannedTss <= Math.round(cap * (1 + CAP_TOLERANCE));
   if (capRespected === false) {
     cleanedRationale.push(
@@ -249,6 +332,9 @@ export function planWeek(ctx) {
 
   return {
     days, hardSessions: hardPlaced, hardBudget,
+    prescribedFrom: rx.anchor?.basis ?? 'library_nominal',
+    anchorWatts: rx.anchor ? Math.round(rx.anchor.watts) : null,
+    phase,
     plannedTss, plannedHours, weeklyTssCap: cap ? Math.round(cap) : null,
     capRespected,
     restDays,

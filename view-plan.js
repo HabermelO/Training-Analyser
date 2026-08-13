@@ -13,6 +13,7 @@ import { store } from './store.js';
 import { deriveAthlete } from './athlete.js';
 import { computeLoad, computePhenotype, aggregateBestPowers } from './load.js';
 import { computeReadiness } from './readiness.js';
+import { estimateFtp } from './ftp.js';
 import { planWeek } from './planner.js';
 import { WORKOUTS, ADAPTATIONS } from './workouts.js';
 import {
@@ -44,8 +45,10 @@ export function renderPlan(root, ctx) {
   const load = computeLoad(rides, asOf);
   const readiness = computeReadiness(store.wellness());
   const phenotype = computePhenotype(aggregateBestPowers(rides.slice(-90)));
+  const ftpEstimate = estimateFtp(rides.slice(-90), profile);
   const plan = planWeek({
     rides, readiness, phenotype, load, asOf,
+    athlete: profile, ftpEstimate,
     longRideDay: store.profile().longRideDay ?? 6,
   });
 
