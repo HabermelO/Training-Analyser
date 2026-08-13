@@ -129,8 +129,26 @@ export function planWeek(ctx) {
   const cap = baseline ? baseline * scale : null;
 
   const totalTss = () => days.reduce((s, d) => s + (d.workout?.tss || 0), 0);
+
+  // A cap is a target, not a limit, and the last few TSS are not worth what it
+  // costs to shed them. Without this tolerance the ordered sacrifice below
+  // overshoots absurdly: a week sitting at 165 against a 162 cap would pull
+  // its hard session and land at 85, destroying the point of the week to save
+  // three points of load.
+  const CAP_TOLERANCE = 0.08;
   if (cap) {
-    // Downgrade endurance days to recovery, latest first, until under cap.
+    const tolerant = cap * (1 + CAP_TOLERANCE);
+    // Bringing a week under its cap, in order of what costs the least
+    // adaptation. Each step is only taken if the week is still over after the
+    // one before it.
+    //
+    // Rest is the last resort but it IS one of the options. An earlier version
+    // had no rest concept — every one of the seven days carried a session — so
+    // a cap below about 290 TSS was arithmetically unreachable and the plan
+    // quietly ignored it. A cap that cannot be met is worse than no cap: it
+    // reads as a considered target while describing a week nobody planned.
+
+    // 1. Endurance days become recovery spins.
     for (let i = days.length - 1; i >= 0 && totalTss() > cap; i--) {
       if (days[i].purpose === 'endurance') {
         days[i] = {
@@ -141,9 +159,12 @@ export function planWeek(ctx) {
         };
       }
     }
+
+    // 2. The long ride shortens before it disappears — the weekly long ride is
+    //    the single most valuable session for aerobic base, so it is defended.
     if (totalTss() > cap) {
       const li = days.findIndex((d) => d.purpose === 'long_ride');
-      if (li >= 0 && days[li].workout.id === 'endurance_long') {
+      if (li >= 0 && days[li].workout?.id === 'endurance_long') {
         days[li] = {
           ...days[li],
           workout: byId('endurance_medium'),
@@ -151,6 +172,50 @@ export function planWeek(ctx) {
         };
       }
     }
+
+    // 3. Recovery spins become rest. They are the cheapest thing on the board
+    //    at 25 TSS, but they are also the least costly to lose: an easy spin
+    //    aids recovery a little, a day off aids it more.
+    for (let i = days.length - 1; i >= 0 && totalTss() > tolerant; i--) {
+      if (days[i].purpose === 'active_recovery') {
+        days[i] = {
+          day: days[i].day,
+          purpose: 'rest',
+          workout: null,
+          note: 'rest day, to keep the week under target',
+        };
+      }
+    }
+
+    // 4. Only now does intensity go. A hard session is the reason the week
+    //    exists, so it is the last thing surrendered — and when it is, the
+    //    plan says so rather than letting it vanish quietly.
+    if (totalTss() > tolerant) {
+      for (let i = days.length - 1; i >= 0 && totalTss() > tolerant; i--) {
+        if (isHard(days[i].workout?.adaptation)) {
+          days[i] = {
+            day: days[i].day,
+            purpose: 'rest',
+            workout: null,
+            note: 'intensity pulled — the week could not carry it and stay under target',
+          };
+          hardPlaced = Math.max(0, hardPlaced - 1);
+        }
+      }
+    }
+
+    // 5. The long ride itself, if the cap is lower than one long ride.
+    if (totalTss() > tolerant) {
+      const li = days.findIndex((d) => d.purpose === 'long_ride');
+      if (li >= 0) {
+        days[li] = {
+          ...days[li],
+          workout: byId('recovery_spin'),
+          note: 'cut right back — recent load and readiness will not support a long ride this week',
+        };
+      }
+    }
+
     rationale.push(`weekly load targeted at ~${Math.round(cap)} TSS`);
   }
 
@@ -159,9 +224,34 @@ export function planWeek(ctx) {
     (days.reduce((s, d) => s + (d.workout?.durationMin || 0), 0) / 60).toFixed(1)
   );
 
+  // Whether the cap was actually achieved. A plan that quietly overshoots its
+  // own target is not a plan, and the UI should be able to say so.
+  // intensityAllowance() writes its note before the cap is applied, so a line
+  // like "no rest days taken" can survive into a week the cap then emptied.
+  // A rationale that contradicts the calendar next to it costs more trust than
+  // the note was ever worth.
+  const restDays = days.filter((d) => d.purpose === 'rest').length;
+  const cleanedRationale = rationale
+    .filter((r) => !(restDays > 0 && /no rest days taken/i.test(r)))
+    .map((r) => (restDays > 0 ? r.replace(/;?\s*no rest days taken/i, '') : r));
+  if (restDays > 0) {
+    cleanedRationale.push(
+      `${restDays} rest day${restDays === 1 ? '' : 's'} to bring the week under target`
+    );
+  }
+
+  const capRespected = cap == null ? null : plannedTss <= Math.round(cap * (1 + CAP_TOLERANCE));
+  if (capRespected === false) {
+    cleanedRationale.push(
+      `could not get the week under ${Math.round(cap)} TSS without removing everything — showing ${plannedTss} TSS instead`
+    );
+  }
+
   return {
     days, hardSessions: hardPlaced, hardBudget,
     plannedTss, plannedHours, weeklyTssCap: cap ? Math.round(cap) : null,
-    rationale,
+    capRespected,
+    restDays,
+    rationale: cleanedRationale,
   };
 }

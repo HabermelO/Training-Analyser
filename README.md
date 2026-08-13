@@ -1,36 +1,89 @@
-# Flat layout
+# Training Analyser
 
-Every file sits in the repository root. No folders, so nothing depends on the
-folder structure being reproduced correctly — which is what was failing.
+An offline cycling analyser. Upload a `.fit` file, get a verdict on the
+session, a profile the app works out from your riding, and a plan for the week.
+Nothing is uploaded anywhere — every calculation happens in the browser.
 
-Upload all of these to the root of the repository, alongside `index.html` and
-`.nojekyll`. If files from an earlier attempt are still there under different
-names, delete them first: a stale `fit_worker.js` or `src/` folder does no harm
-but will confuse the next person to read the repo.
+## Installing
+
+Every file goes in the **root** of the repository, next to `index.html`. No
+folders, no build step. Turn on GitHub Pages, deploying from a branch, folder
+`/ (root)`.
+
+If a file is missing, the page says which one on load rather than failing
+silently.
+
+## Tabs
+
+**Analyse** — drop in a ride. Two-pass parse: the file is read once with no
+profile (peak powers, heart rate, duration and normalised power need no
+threshold), the profile is derived from that evidence, then the ride is
+recomputed with zones, TSS and classification. Assuming a threshold in order to
+compute the evidence that produces it would be circular, and the numbers would
+look plausible while being wrong.
+
+**History** — a daily check-in for HRV, resting heart rate, sleep and how you
+feel, then the long view. Fitness, fatigue and form share the left axis; heart
+rate, threshold and power-per-beat are on the right, marked `R`, because those
+quantities do not share a unit and plotting them together would imply a
+comparison that does not exist.
+
+**Plan** — the week the engine suggests, with what each session is for. Drag a
+session to another day, or tap it and tap the day. Dropping onto an occupied
+day swaps the two rather than deleting one. Moves are stored as overrides
+keyed by date, so they survive the plan being recomputed; "Reset to suggested"
+always gets you back.
+
+**Profile** — what you know about yourself, and what the app worked out, shown
+side by side. A number you typed and a number modelled from your riding are
+different kinds of fact and the screen does not blur them. Export and restore
+live here too.
+
+## Colour
+
+Each metric family carries one colour everywhere it appears — chart line,
+badge, calendar chip, sparkline. Power and threshold are yellow, anything
+cardiac is pink, training load is blue, form is green. The palette is from
+Grand Tour jerseys, and it is meant to be learned once and then read at a
+glance.
 
 ## Two files were renamed
 
-The nested layout had two files called `index.js` (`src/ingest/index.js` and
-`src/llm/index.js`), which cannot both live in the root. They are now:
+The nested layout had two files called `index.js`, which cannot both live in
+the root:
 
 | was | now |
 | --- | --- |
 | `src/ingest/index.js` | `ingest.js` |
 | `src/llm/index.js` | `narration.js` |
 
-Every import has been rewritten to match. Nothing else changed — the engine,
-parser, guard and narration code are byte-identical to the nested version.
+## Working on it
 
-## What the page does on load
+Run it locally before pushing — module imports and workers both need a real
+HTTP server, so opening `index.html` from the filesystem will not work:
 
-Before importing anything it checks all 21 module files are actually reachable
-and, if any are missing, names them with the URL it tried. "Importing a module
-script failed" is all the browser gives you otherwise, and it never says which
-file.
+```
+python3 -m http.server 8000
+```
 
-## Note on tests
+Then open `http://localhost:8000`. That is a two-second feedback loop instead
+of waiting for a Pages rebuild.
 
-`test/parse.js`, `test/sources.js` and `test/scenarios.js` still expect the
-nested layout, since they run under Node rather than being served. Keep them in
-a `test/` folder if you want them, or leave them out of this repository — the
-app does not import them.
+## Rest days
+
+The planner can now leave days empty. It brings a week under its load target in
+order of what costs the least adaptation: endurance days become recovery spins,
+the long ride shortens, recovery spins become rest, and only then does
+intensity go. A tolerance of 8% stops it destroying a week to shed the last few
+TSS. If the target still cannot be met, the plan says so rather than quietly
+overshooting.
+
+## Known limitations
+
+- The first visit needs a network connection: `fit-file-parser` and WebLLM load
+  from a CDN. After that the browser has them cached. A service worker is the
+  honest fix if offline-from-first-load matters.
+- On-device narration needs WebGPU. Without it every summary comes from the
+  rules engine instead, which is a supported state rather than a failure.
+- Rides are summarised when stored, so reopening the app shows history and
+  trends but not the full per-ride breakdown. Upload the file again for that.
