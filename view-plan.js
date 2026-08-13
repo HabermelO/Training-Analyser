@@ -14,7 +14,7 @@ import { deriveAthlete } from './athlete.js';
 import { computeLoad, computePhenotype, aggregateBestPowers } from './load.js';
 import { computeReadiness } from './readiness.js';
 import { estimateFtp } from './ftp.js';
-import { planWeek } from './planner.js';
+import { planWeek, suggestToday } from './planner.js';
 import { WORKOUTS, ADAPTATIONS } from './workouts.js';
 import {
   el, card, stat, statRow, badge, button, toast, note, fmt, clear, empty,
@@ -46,11 +46,20 @@ export function renderPlan(root, ctx) {
   const readiness = computeReadiness(store.wellness());
   const phenotype = computePhenotype(aggregateBestPowers(rides.slice(-90)));
   const ftpEstimate = estimateFtp(rides.slice(-90), profile);
-  const plan = planWeek({
+  const planCtx = {
     rides, readiness, phenotype, load, asOf,
     athlete: profile, ftpEstimate,
+    profile: store.profile(),
+    planEdits: store.planEdits(),
     longRideDay: store.profile().longRideDay ?? 6,
-  });
+  };
+  const plan = planWeek(planCtx);
+  const today = suggestToday({ ...planCtx, plan });
+
+  // --- today ---------------------------------------------------------
+  // The headline. A week shape answers "what does this block look like"; this
+  // answers the question the athlete actually opened the app with.
+  root.append(todayCard(today));
 
   // --- summary -------------------------------------------------------
   const head = card('This week', { hint: fmt.title(readiness.flag) });
@@ -153,6 +162,19 @@ export function renderPlan(root, ctx) {
     dh.append(el('span', 'day-num', String(date.getDate())));
     cell.append(dh);
 
+    if (planned?.frozen) {
+      // A day already lived is reported, not prescribed, and cannot be a drop
+      // target — moving a session onto Tuesday on Thursday is not a plan
+      // change, it is a fiction.
+      cell.classList.add('is-past');
+      const a = planned.actual;
+      cell.append(el('div', 'day-rest', a
+        ? `Ridden — ${Math.round(a.tss)} TSS`
+        : 'Not ridden'));
+      grid.append(cell);
+      continue;
+    }
+
     if (workout) {
       cell.append(workoutChip(workout, iso, planned, overrideId != null, setPicked, () => picked));
     } else {
@@ -213,6 +235,51 @@ export function renderPlan(root, ctx) {
     detail.body.append(row);
   }
   root.append(detail);
+}
+
+/**
+ * Today, and the reasoning behind it, in the order the decision was actually
+ * made. The trace is shown rather than summarised because "why" is the part
+ * an athlete argues with, and an argument needs the steps.
+ */
+function todayCard(today) {
+  const c = card('Today', {
+    hint: today.alreadyRidden ? 'Already ridden' : today.wasOverridden ? 'Your edit' : null,
+  });
+
+  const head = el('div', 'today-head');
+  head.append(el('span', 'today-title', today.headline));
+  if (today.session) {
+    head.append(badge(`${today.session.durationMin} min`, 'neutral'));
+    const p = today.prescription;
+    if (p?.targetWatts) head.append(badge(`${Math.round(p.targetWatts)}W`, 'signal'));
+    head.append(badge(`${Math.round(p?.tss ?? today.session.tss)} TSS`, 'neutral'));
+  }
+  c.body.append(head);
+
+  if (today.session?.outdoor) {
+    c.body.append(el('p', 'session-goal', today.session.outdoor.prescription));
+  }
+  if (today.note) c.body.append(note(today.note, 'signal'));
+  if (today.wasOverridden) {
+    c.body.append(note(
+      `This is not what the engine would have picked — ${today.overrideReason}. It stays until you reset the week.`,
+      'signal',
+    ));
+  }
+
+  const ul = el('ul', 'trace');
+  for (const t of today.trace) {
+    const li = el('li');
+    li.append(el('span', 'trace-step', t.step));
+    const body = el('span', 'trace-body');
+    body.append(el('span', 'trace-value', fmt.title(String(t.value))));
+    body.append(document.createTextNode(` — ${t.effect}`));
+    li.append(body);
+    ul.append(li);
+  }
+  c.body.append(ul);
+  return c;
 }
 
 function workoutChip(workout, iso, planned, isMoved, setPicked, getPicked) {

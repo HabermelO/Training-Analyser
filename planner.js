@@ -2,6 +2,7 @@ import { WORKOUTS, byId } from './workouts.js';
 import { intensityAllowance } from './readiness.js';
 import { computePhase } from './phase.js';
 import { prescriber } from './prescribe.js';
+import { intensityDistribution } from './load.js';
 
 // Builds the next 7 days by constrained selection, never by generation.
 // Rules, in order of authority:
@@ -35,15 +36,24 @@ function recentAdaptationCounts(rides, days = 30, asOf = new Date()) {
 
 function selector(used) {
   // Prefer an unused workout matching the filter; fall back to any match.
-  return (predicate) => {
+  // An optional comparator decides WHICH match, which is how the grey-drift
+  // correction reaches into the library without a second selection path.
+  return (predicate, order) => {
     const matches = WORKOUTS.filter(predicate);
     if (!matches.length) return null;
-    const fresh = matches.filter((w) => !used.has(w.id));
-    const choice = (fresh.length ? fresh : matches)[0];
+    const ranked = order ? [...matches].sort(order) : matches;
+    const fresh = ranked.filter((w) => !used.has(w.id));
+    const choice = (fresh.length ? fresh : ranked)[0];
     used.add(choice.id);
     return choice;
   };
 }
+
+// Lowest intensity first. Duration breaks ties, so "easier" never quietly
+// becomes "shorter" — the whole point of the correction is to keep the hours.
+const byGentlest = (a, b) =>
+  (a.work?.onPctCp ?? a.if ?? 1) - (b.work?.onPctCp ?? b.if ?? 1) ||
+  (b.durationMin || 0) - (a.durationMin || 0);
 
 export function planWeek(ctx) {
   const asOf = ctx.asOf ? new Date(ctx.asOf) : new Date();
@@ -63,6 +73,22 @@ export function planWeek(ctx) {
       asOf,
     });
   rationale.push(...(phase.reasons || []));
+
+  // What the athlete has ACTUALLY been doing, by minutes rather than by
+  // session count. Counting hard sessions against a budget cannot see three
+  // "endurance" rides that all drifted into tempo: that week reads as 80/20
+  // by session and is nearer 50/50 by time.
+  const distribution =
+    ctx.distribution || intensityDistribution(ctx.rides || [], { asOf });
+  // Adding intensity to a grey block is the wrong correction — the problem is
+  // that the easy days are not easy, not that the hard days are missing.
+  const greyDrift = distribution.model === 'grey' && distribution.moderatePct != null;
+  if (greyDrift) {
+    rationale.push(
+      `${distribution.moderatePct}% of the last ${distribution.days} days' riding sat in tempo — ` +
+      `easy days are pulled genuinely easy rather than another hard day being added`
+    );
+  }
 
   // Least-trained hard adaptations first, then the phase gets the casting
   // vote: rotating least-trained-first forever is what produced a permanent
@@ -111,19 +137,58 @@ export function planWeek(ctx) {
     cpSource: ctx.ftpEstimate?.basis === 'critical_power_2p' ? 'modelled' : 'declared',
     ftp: ctx.athlete?.ftp ?? ctx.profile?.ftp,
   });
-  const tssOf = (d) => rx(d?.workout)?.tss ?? d?.workout?.tss ?? 0;
-  const minsOf = (d) => rx(d?.workout)?.durationMin ?? d?.workout?.durationMin ?? 0;
+  // Frozen days carry what was ridden, not what was prescribed. The cap has
+  // to be spent against reality or a heavy Monday buys a free Saturday.
+  const tssOf = (d) =>
+    d?.frozen ? d.actual?.tss || 0 : rx(d?.workout)?.tss ?? d?.workout?.tss ?? 0;
+  const minsOf = (d) =>
+    d?.frozen ? d.actual?.durationMin || 0 : rx(d?.workout)?.durationMin ?? d?.workout?.durationMin ?? 0;
 
   const used = new Set();
   const pick = selector(used);
   const longRideDay = ctx.longRideDay ?? 6;
   const suppressed = hardBudget === 0;
 
+  // Days already lived are not planning problems. Re-planning Monday on
+  // Thursday produces a week that keeps rearranging behind the athlete, and a
+  // volume cap computed against sessions that were never ridden is arithmetic
+  // about a fiction. Past days read what actually happened.
+  const freezePast = ctx.freezePast !== false;
+  const weekStart = startOfWeek(asOf);
+  const todayIdx = Math.min(6, Math.max(0, dayIndexOf(asOf, weekStart)));
+  const ridden = new Map();
+  for (const r of ctx.rides || []) {
+    const idx = dayIndexOf(r.date, weekStart);
+    if (idx < 0 || idx > 6) continue;
+    const prev = ridden.get(idx);
+    ridden.set(idx, {
+      tss: (prev?.tss || 0) + (r.tss || 0),
+      durationMin: (prev?.durationMin || 0) + (r.durationMin || 0),
+      adaptation: r.adaptation || r.sessionType || prev?.adaptation || null,
+    });
+  }
+
   const days = [];
   let hardPlaced = 0;
   let priorityIdx = 0;
 
   for (let d = 0; d < 7; d++) {
+    if (freezePast && d < todayIdx) {
+      const actual = ridden.get(d);
+      // A hard day already ridden spends the budget. Otherwise a mid-week
+      // recompute hands back allowance the athlete has already used.
+      if (actual && isHard(actual.adaptation)) hardPlaced++;
+      days.push({
+        day: d,
+        purpose: actual ? 'completed' : 'not_ridden',
+        frozen: true,
+        workout: null,
+        actual: actual || null,
+        note: actual ? null : 'nothing recorded for this day',
+      });
+      continue;
+    }
+
     if (d === longRideDay) {
       // Under strong suppression the long ride still happens, but shortened.
       const w = suppressed
@@ -159,9 +224,16 @@ export function planWeek(ctx) {
       days.push({ day: d, purpose: 'active_recovery', workout: byId('recovery_spin') });
     } else {
       const w =
-        pick((x) => x.adaptation === 'aerobic_base' && x.durationMin < 150) ||
-        byId('endurance_medium');
-      days.push({ day: d, purpose: 'endurance', workout: w });
+        pick(
+          (x) => x.adaptation === 'aerobic_base' && x.durationMin < 150,
+          greyDrift ? byGentlest : null
+        ) || byId('endurance_medium');
+      days.push({
+        day: d,
+        purpose: 'endurance',
+        workout: w,
+        note: greyDrift ? 'held at the bottom of the aerobic range to break the middle-zone drift' : null,
+      });
     }
   }
 
@@ -335,9 +407,155 @@ export function planWeek(ctx) {
     prescribedFrom: rx.anchor?.basis ?? 'library_nominal',
     anchorWatts: rx.anchor ? Math.round(rx.anchor.watts) : null,
     phase,
+    distribution,
+    todayIndex: todayIdx,
+    weekStart: weekStart.toISOString().slice(0, 10),
     plannedTss, plannedHours, weeklyTssCap: cap ? Math.round(cap) : null,
     capRespected,
     restDays,
     rationale: cleanedRationale,
   };
+}
+
+/**
+ * One decision, one reason. The week shape answers "what does this block look
+ * like"; this answers "what am I doing today, and why" — which is the question
+ * the athlete actually opens the app with, and the only one small enough for
+ * the narration layer to write a reliable paragraph about.
+ *
+ * The trace is ordered the way the decision is actually made: readiness can
+ * only veto, TSB can only cap, the phase sets the ambition, and the adaptation
+ * gap picks between what is left.
+ *
+ * @param {object} ctx  same shape as planWeek, plus optional { planEdits }
+ */
+export function suggestToday(ctx) {
+  const plan = ctx.plan || planWeek(ctx);
+  const asOf = ctx.asOf ? new Date(ctx.asOf) : new Date();
+  const today = plan.days.find((d) => d.day === plan.todayIndex) || plan.days[0];
+
+  // An edit the athlete made outranks the suggestion. Saying so is the point:
+  // a plan that silently reverts to its own opinion teaches people their
+  // changes do not stick.
+  const iso = new Date(asOf).toISOString().slice(0, 10);
+  const editId = ctx.planEdits?.[iso];
+  const overridden = editId != null && editId !== today?.workout?.id;
+  const session = overridden
+    ? WORKOUTS.find((w) => w.id === editId) || today?.workout || null
+    : today?.workout || null;
+
+  const trace = [];
+
+  // 1. Readiness — veto only.
+  const flag = ctx.readiness?.flag || 'no_data';
+  trace.push({
+    step: 'readiness',
+    value: flag,
+    effect:
+      flag === 'strongly_suppressed'
+        ? 'blocks intensity outright'
+        : flag === 'suppressed'
+        ? 'reduces the intensity allowance'
+        : flag === 'no_data'
+        ? 'no check-in data, so it neither permits nor blocks anything'
+        : 'no objection',
+  });
+
+  // 2. Form.
+  if (ctx.load) {
+    trace.push({
+      step: 'form',
+      value: `TSB ${ctx.load.tsb > 0 ? '+' : ''}${Math.round(ctx.load.tsb)}`,
+      effect:
+        ctx.load.state === 'deep_hole'
+          ? 'deep enough to cap the week at one hard day regardless of markers'
+          : ctx.load.state === 'fresh'
+          ? 'fresh enough to absorb a key session'
+          : 'within the normal training range',
+    });
+  }
+
+  // 3. Phase — the ambition.
+  trace.push({
+    step: 'phase',
+    value: `${plan.phase.phase}, week ${plan.phase.weekInBlock}`,
+    effect: plan.phase.isRecoveryWeek
+      ? 'scheduled unload week, so volume drops by design'
+      : `targets about ${plan.phase.weeklyTssTarget ?? '—'} TSS this week`,
+  });
+
+  // 4. Distribution — what has actually been ridden.
+  if (plan.distribution?.model && plan.distribution.model !== 'insufficient') {
+    trace.push({
+      step: 'distribution',
+      value: plan.distribution.model,
+      effect:
+        plan.distribution.model === 'grey'
+          ? 'easy days are pulled lower rather than another hard day being added'
+          : 'the split across the last six weeks is where it should be',
+    });
+  }
+
+  // 5. The gap this session fills.
+  if (session) {
+    trace.push({
+      step: 'adaptation',
+      value: session.adaptation,
+      effect:
+        today?.purpose === 'long_ride'
+          ? 'the week\'s long ride, the single most valuable session for aerobic base'
+          : isHard(session.adaptation)
+          ? 'the least-trained hard quality the phase currently favours'
+          : 'aerobic volume without cost to tomorrow',
+    });
+  }
+
+  const done = today?.frozen || plan.todayIndex == null;
+
+  return {
+    date: iso,
+    day: plan.todayIndex,
+    purpose: today?.purpose ?? null,
+    session,
+    prescription: overridden ? null : today?.prescription ?? null,
+    note: today?.note ?? null,
+    trace,
+    wasOverridden: overridden,
+    overrideReason: overridden ? 'you moved this session here yourself' : null,
+    // Today already has a ride against it — the day is being reported, not
+    // prescribed.
+    alreadyRidden: !!done && !!today?.actual,
+    headline: session
+      ? `${session.systm || session.id} — ${
+          // The engine's slot purpose describes the session it chose, not the
+          // one the athlete put there. Carrying it over labels a VO2 session
+          // "active recovery", which is worse than saying nothing.
+          overridden ? 'your choice for today' : labelPurpose(today?.purpose)
+        }`
+      : today?.purpose === 'rest'
+      ? 'Rest day'
+      : 'Nothing scheduled',
+  };
+}
+
+const labelPurpose = (p) =>
+  ({
+    key_session: 'the week\'s key session',
+    long_ride: 'the long ride',
+    endurance: 'aerobic volume',
+    active_recovery: 'active recovery',
+    rest: 'rest',
+  }[p] || 'scheduled');
+
+function startOfWeek(d) {
+  const date = new Date(d);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));  // Monday = 0
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function dayIndexOf(date, weekStart) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return Math.floor((d - weekStart) / 86400000);
 }

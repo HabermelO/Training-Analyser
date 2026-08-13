@@ -247,8 +247,11 @@ function renderProposals(root, ride, profile, ctx) {
 
   if (standing.message && standing.standing !== 'unknown') {
     const s = card('Threshold standing');
-    s.body.append(el('div', 'standing-head')).append(
-      badge(fmt.title(standing.standing), standing.standing === 'holding' ? 'good' : 'signal'));
+    // Node.append() returns undefined, so this cannot be chained — the badge
+    // has to be attached to the row before the row is attached to the card.
+    const row = el('div', 'standing-head');
+    row.append(badge(fmt.title(standing.standing), standing.standing === 'holding' ? 'good' : 'signal'));
+    s.body.append(row);
     s.body.append(el('p', null, standing.message));
     if (standing.action?.suggestion) s.body.append(note(standing.action.suggestion, 'signal'));
     root.append(s);
@@ -256,7 +259,9 @@ function renderProposals(root, ride, profile, ctx) {
 
   if (stale) {
     const s = card('Threshold age');
-    s.body.append(el('div', 'standing-head')).append(badge(`${stale.ageDays} days`, 'signal'));
+    const row = el('div', 'standing-head');
+    row.append(badge(`${stale.ageDays} days`, 'signal'));
+    s.body.append(row);
     s.body.append(el('p', null, stale.message));
     root.append(s);
   }

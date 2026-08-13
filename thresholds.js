@@ -103,6 +103,27 @@ export const PRESCRIPTION = {
   minReps: 2,
 };
 
+export const TID = {
+  // Six weeks. Shorter and a single recovery week distorts the picture;
+  // longer and a block change washes out before it shows up.
+  windowDays: 42,
+  // Below these the answer is arithmetic on too little, and a distribution
+  // read off three rides is a description of three rides.
+  minRides: 6,
+  minTotalMin: 300,
+
+  // The grey-zone floor. Time in tempo above this share is the classic
+  // middle trap: easy days not easy enough to recover from, hard days not
+  // hard enough to adapt to.
+  greyModeratePct: 20,
+  // A deliberate high-intensity block rather than a drifting one.
+  thresholdHardPct: 25,
+  // Polarised proper. Set at 75 rather than 80 because the classic 80/20 is
+  // stated in sessions and this is measured in minutes — warmups and
+  // cooldowns of hard sessions land in the easy bucket either way.
+  polarisedEasyPct: 75,
+};
+
 export const PHASE = {
   // 3:1 loading — three ramping weeks, then a scheduled unload.
   blockWeeks: 4,

@@ -173,6 +173,60 @@ export function sparkline(values, colour, opts = {}) {
 }
 
 /** Horizontal bars for time-in-zone. Zones are ordered, so bars are too. */
+/**
+ * Realised intensity distribution as one bar in three parts. Deliberately not
+ * a pie and not three separate bars: the whole point is the proportion between
+ * them, and the middle segment growing is the thing worth seeing.
+ */
+export function distributionBar(dist) {
+  const wrap = document.createElement('div');
+  wrap.className = 'tidbar';
+  if (!dist || dist.easyPct == null) {
+    wrap.innerHTML = '<div class="chart-empty">Not enough riding yet to read a distribution.</div>';
+    return wrap;
+  }
+
+  const segments = [
+    { key: 'easy', label: 'Easy', pct: dist.easyPct, mins: dist.easyMin, colour: 'var(--fresh)' },
+    { key: 'moderate', label: 'Tempo', pct: dist.moderatePct, mins: dist.moderateMin, colour: 'var(--power)' },
+    { key: 'hard', label: 'Hard', pct: dist.hardPct, mins: dist.hardMin, colour: 'var(--fatigue)' },
+  ];
+
+  const track = document.createElement('div');
+  track.className = 'tidbar-track';
+  track.setAttribute('role', 'img');
+  track.setAttribute(
+    'aria-label',
+    segments.map((s) => `${s.label} ${s.pct}%`).join(', ')
+  );
+  for (const s of segments) {
+    if (!s.pct) continue;
+    const seg = document.createElement('span');
+    seg.className = `tidbar-seg tidbar-seg-${s.key}`;
+    seg.style.width = `${s.pct}%`;
+    seg.style.background = s.colour;
+    seg.title = `${s.label}: ${s.pct}% (${Math.round(s.mins)} min)`;
+    if (s.pct >= 12) seg.textContent = `${Math.round(s.pct)}%`;
+    track.append(seg);
+  }
+  wrap.append(track);
+
+  const key = document.createElement('div');
+  key.className = 'tidbar-key';
+  for (const s of segments) {
+    const item = document.createElement('span');
+    item.className = 'tidbar-keyitem';
+    const dot = document.createElement('span');
+    dot.className = 'tidbar-dot';
+    dot.style.background = s.colour;
+    item.append(dot);
+    item.append(document.createTextNode(`${s.label} ${s.pct}%`));
+    key.append(item);
+  }
+  wrap.append(key);
+  return wrap;
+}
+
 export function zoneBars(zoneMinutes, opts = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'zonebars';

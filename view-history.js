@@ -7,10 +7,10 @@
 // not exist. Anything on the right axis says so in the legend.
 
 import { store, todayIso } from './store.js';
-import { computeLoad } from './load.js';
+import { computeLoad, intensityDistribution } from './load.js';
 import { deriveAthlete } from './athlete.js';
 import { computeReadiness } from './readiness.js';
-import { timeChart, sparkline } from './charts.js';
+import { timeChart, sparkline, distributionBar } from './charts.js';
 import {
   el, card, stat, statRow, field, numberInput, button, toast, badge,
   fmt, clear, empty, note,
@@ -67,6 +67,28 @@ export function renderHistory(root, ctx) {
     now.body.append(ul);
   }
   root.append(now);
+
+  // --- intensity distribution ----------------------------------------
+  // Session counting cannot see this. Three "endurance" rides that each drift
+  // into tempo read as an easy week by session and as a middling one by time,
+  // and time is what the body responds to.
+  const dist = intensityDistribution(rides, { asOf: new Date() });
+  const tid = card('How hard you have actually been riding', {
+    hint: `Last ${dist.days} days`,
+  });
+  tid.body.append(distributionBar(dist));
+  if (dist.model !== 'insufficient') {
+    const row = el('div', 'today-head');
+    row.append(badge(fmt.title(dist.model), dist.model === 'polarised' ? 'good' : 'signal'));
+    tid.body.append(row);
+  }
+  if (dist.note) tid.body.append(el('p', null, dist.note));
+  tid.body.append(note(
+    dist.source === 'hr'
+      ? 'Measured from heart-rate zones, because these rides had no power. Heart rate lags, so the easy share here is slightly generous.'
+      : 'Measured in minutes, not sessions — a ride labelled easy that spent an hour in tempo counts as an hour in tempo.',
+  ));
+  root.append(tid);
 
   // --- trends --------------------------------------------------------
   const trends = card('Trends');

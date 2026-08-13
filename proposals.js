@@ -30,9 +30,9 @@ export const EVIDENCE = {
   DECOUPLED_EFFORT: 'decoupled_effort',
   // Heart rate exceeded what we thought was possible.
   NEW_MAX_HR: 'new_max_hr',
-  // Watts-per-beat has moved across ordinary training, sustained and agreed
-  // across rides. Not a measurement of threshold — a proxy for it.
-  EF_TREND: 'efficiency_trend',
+  // Watts per heartbeat has moved and held, across many ordinary rides, with
+  // no maximal effort anywhere in it.
+  EF_TREND: 'ef_trend',
 };
 
 export const PROPOSAL_RULES = {
@@ -60,21 +60,15 @@ export const PROPOSAL_RULES = {
   // raise it again.
   rejectionCooldownDays: 60,
 
-  // --- efficiency-trend proposals -------------------------------------
-  // Only half the efficiency change is carried into the threshold. Part of a
-  // rise in watts-per-beat is aerobic economy at submaximal intensity, which
-  // moves the cost of riding easy without moving the ceiling.
-  efDampingFactor: 0.5,
-  // Hard clamp either side, whatever the trend says. The spec asks for a
-  // conservative 2–5% adjustment; EF is a proxy, not a test.
-  efMaxChangePct: 5,
-  // Nothing smaller than this is worth asking about.
-  efMinChangePct: 1.5,
-  // No FTP proposal of this kind within three weeks of the last ACCEPTED FTP
-  // change, from any evidence. Without this a slow, real improvement would be
-  // re-proposed every time the Analyse tab rendered and compound weekly into
-  // a number nobody has ever ridden.
-  efCooldownDays: 21,
+  // --- efficiency-derived proposals ----------------------------------
+  // EF is a proxy, not a measurement, so only half the observed change is
+  // carried into the threshold...
+  efDampingFraction: 0.5,
+  // ...and never more than this, in either direction.
+  efMaxPct: 5,
+  // Nothing may move the threshold twice inside three weeks. Without this a
+  // slow drift compounds weekly into a number nobody ever rode.
+  efMinDaysSinceChange: 21,
 };
 
 /**
@@ -188,135 +182,132 @@ export function proposeFromRide(ride, profile, decisions = []) {
   return out.filter((p) => !suppressed(p, decisions, ride.date));
 }
 
-// Relative weight of each zone's evidence, mirroring standing.js: threshold
-// work sits closest to the number in question, endurance furthest from it.
-const ZONE_WEIGHT = { Z4_Threshold: 3, Z3_Tempo: 2, Z2_Endurance: 1 };
-const ZONE_LABEL = {
-  Z2_Endurance: 'endurance riding',
-  Z3_Tempo: 'tempo',
-  Z4_Threshold: 'threshold work',
-};
-
 /**
- * Close the submaximal loop: turn a sustained efficiency trend into an FTP
- * proposal, so an athlete who trains consistently and never rides a maximal
- * effort does not sit on a frozen threshold while their zones drift easy.
+ * The efficiency route into the threshold, for the athlete who trains
+ * consistently and never rides a maximal effort. Without this their number is
+ * frozen for as long as they keep training well, and their zones drift
+ * progressively wrong underneath them.
  *
- * This is the weakest evidence the app acts on, so it is the most heavily
- * damped: half the observed change, clamped to ±5%, confidence 'low', and
- * `confirms: false` so accepting it never resets the confirmed figure that
- * the drift cap in standing.js measures against.
+ * This deliberately covers the DOWNWARD direction only. Upward movement is
+ * already handled by conservativeBump() in standing.js, which is the more
+ * heavily gated of the two — it carries a persistence rule, a cooldown, and a
+ * total-drift ceiling above the last confirmed figure. Duplicating it here
+ * would ask the athlete the same question twice with two different numbers,
+ * and worse, would let a proposal blocked there reappear unblocked here.
  *
- * @param {object} standing  result of assessThresholdStanding()
- * @param {object} profile   { ftp, ftpSetAt, confirmedFtp, lastBumpAt }
+ * @param {object} standing  output of assessThresholdStanding()
+ * @param {object} profile   { ftp, ftpSetAt, lastBumpAt }
  * @param {Array}  decisions past accept/reject records
- * @param {Date}   asOf
- * @returns {Array} zero or one proposal
  */
 export function proposeFromStanding(standing, profile, decisions = [], asOf = new Date()) {
   const rules = PROPOSAL_RULES;
+  if (!profile?.ftp) return [];
+  // Only when the app has actually decided the threshold is in question. A
+  // 'holding' or 'improving' verdict is not evidence for a reduction.
+  if (standing?.standing !== 'questioned') return [];
+
+  const zones = Object.entries(standing.zones || {})
+    .filter(([, z]) => z.verdict === 'declining')
+    // The gates the spec asks for, stated explicitly rather than inherited:
+    // the change must be consistent across rides, and must clear the
+    // athlete's OWN scatter rather than a population constant.
+    .filter(([, z]) => z.agreement >= EF_AGREEMENT)
+    .filter(([, z]) => Math.abs(z.changePct) >= (z.thresholdPct ?? Infinity));
+  if (!zones.length) return [];
+
+  // Nothing may move the number twice inside the cooldown, whichever route
+  // moved it last.
   const now = new Date(asOf).getTime();
-  const ftp = profile?.ftp;
-  if (!ftp || !standing?.zones) return [];
+  const lastChange = [profile.ftpSetAt, profile.lastBumpAt]
+    .filter(Boolean)
+    .map((d) => new Date(d).getTime())
+    .sort((a, b) => b - a)[0];
+  if (lastChange != null) {
+    const since = (now - lastChange) / 86400000;
+    if (since < rules.efMinDaysSinceChange) return [];
+  }
 
-  // Downward movement is not proposed off efficiency alone. The same
-  // signature comes from a heavy block, illness or heat, and standing.js
-  // already asks for a real effort in that case rather than quietly lowering
-  // the number.
-  const candidates = Object.entries(standing.zones).filter(([, z]) => {
-    if (z.verdict !== 'improving') return false;
-    if (z.agreement == null || z.agreement < STANDING.agreementFraction) return false;
-    // Must clear the athlete's OWN noise band, not a fixed percentage.
-    // `thresholdPct` is already max(materialChangePct, noisePct * multiple).
-    if (z.thresholdPct != null && Math.abs(z.changePct) < z.thresholdPct) return false;
-    return true;
-  });
-  if (!candidates.length) return [];
-
-  // Cooldown, measured from the last FTP change the athlete actually
-  // accepted — not from the last time the app offered one.
-  const sinceAccepted = daysSinceAcceptedFtpChange(decisions, profile, now);
-  if (sinceAccepted != null && sinceAccepted < rules.efCooldownDays) return [];
-
-  // Strongest evidence wins: zone weight first, then size of the change.
-  const [zoneName, zone] = candidates.sort(
-    (a, b) =>
-      (ZONE_WEIGHT[b[0]] || 1) - (ZONE_WEIGHT[a[0]] || 1) ||
-      Math.abs(b[1].changePct) - Math.abs(a[1].changePct)
+  // Threshold-zone evidence outranks endurance-zone evidence, same weighting
+  // the standing summary uses.
+  const rank = (n) => (n === 'Z4_Threshold' ? 3 : n === 'Z3_Tempo' ? 2 : 1);
+  const [zoneName, zone] = zones.sort(
+    (a, b) => rank(b[0]) - rank(a[0]) || a[1].changePct - b[1].changePct
   )[0];
 
-  const pct = clamp(zone.changePct * rules.efDampingFactor, -rules.efMaxChangePct, rules.efMaxChangePct);
-  if (Math.abs(pct) < rules.efMinChangePct) return [];
-
-  const proposed = Math.round(ftp * (1 + pct / 100));
-  if (proposed === ftp) return [];
+  // Half the observed change, clamped. EF moves for reasons that have nothing
+  // to do with the ceiling — economy at submaximal intensity, cadence, heat —
+  // so carrying it across one-for-one would overshoot every time.
+  const damped = clampPct(zone.changePct * rules.efDampingFraction, rules.efMaxPct);
+  const proposed = Math.round(profile.ftp * (1 + damped / 100));
+  if (proposed >= profile.ftp) return [];
+  if (!exceeds(profile.ftp, proposed, rules)) return [];
 
   const proposal = {
-    id: `ftp-ef:${new Date(now).toISOString().slice(0, 10)}:${zoneName}:${proposed}`,
+    // Keyed by the number rather than the day, so re-rendering the tab does
+    // not manufacture a new question every time.
+    id: `ftp-ef:${proposed}`,
     field: 'ftp',
-    direction: proposed > ftp ? 'up' : 'down',
-    current: ftp,
+    direction: 'down',
+    current: profile.ftp,
     proposed,
     evidence: EVIDENCE.EF_TREND,
     confidence: 'low',
-    // Inferred, so it must not count as a confirmation.
+    // Inferred, never confirmed — same reasoning as the upward bump. A number
+    // nothing demonstrated must not become the baseline that future drift is
+    // measured against.
     confirms: false,
     rationale:
-      `Your watts per heartbeat in ${ZONE_LABEL[zoneName] || zoneName} is up ${zone.changePct}% on your ` +
-      `baseline, across ${zone.recentRides} rides, with ${Math.round(zone.agreement * 100)}% of them agreeing ` +
-      `and the shift clearing your own ${zone.noisePct}% ride-to-ride scatter. That supports a threshold ` +
-      `nearer ${proposed}W. The change is half the efficiency gain and capped at ${rules.efMaxChangePct}%, ` +
-      `because efficiency is a proxy for threshold rather than a measurement of it.`,
+      `Watts per heartbeat in ${zoneLabel(zoneName)} is down ${Math.abs(zone.changePct)}% on your baseline, ` +
+      `agreeing across ${Math.round(zone.agreement * 100)}% of ${zone.recentRides} recent rides` +
+      // Where scatter is unusually tight the real gate is the fixed
+      // material-change floor, not the athlete's dispersion. Claiming to have
+      // cleared a 0% band would be a boast about nothing.
+      (zone.noisePct >= 1
+        ? ` and clearing your own ride-to-ride scatter of ${zone.noisePct}%. `
+        : ` and clearing the ${zone.thresholdPct}% floor below which this is treated as noise. `) +
+      `That supports a threshold nearer ${proposed}W. ` +
+      `The reduction is half the efficiency change and capped at ${rules.efMaxPct}%, because efficiency is a ` +
+      `proxy for threshold rather than a measurement of it.`,
     caution:
-      'Nothing maximal has tested this. A 20-minute effort would replace an inference with a number.',
+      'Illness, a heavy block, heat and poor sleep all produce this signature. If you know why the last few ' +
+      'weeks have been hard, decline — a 20-minute effort would settle it properly.',
     affects: 'all power zones, TSS, and how future sessions are classified',
+    bound: 'upper',
   };
 
-  return suppressed(proposal, decisions, now) ? [] : [proposal];
+  return [proposal].filter((p) => !suppressed(p, decisions, asOf));
 }
 
 /**
- * `ageDays` was being computed and never acted on. When a threshold has stood
- * past its shelf life and nothing is pending, say so plainly — silence there
- * reads as endorsement.
- *
- * @returns {object|null} { kind, ageDays, message } or null
+ * `ageDays` was being computed on every render and acted on by nothing. A
+ * threshold that nothing has tested for four months is not wrong, but the
+ * athlete should know the number is old — and should only be told once there
+ * is no live proposal already asking for their attention.
  */
 export function stalenessPrompt(standing, { pendingProposals = [] } = {}) {
-  const age = standing?.ageDays;
-  if (age == null || age <= STANDING.maxStandingDays) return null;
-  // A pending FTP question is already the conversation. Do not stack a second
-  // prompt on top of it.
+  if (!standing || standing.ageDays == null) return null;
+  if (standing.ageDays <= STANDING.maxStandingDays) return null;
+  // Don't stack a nag on top of a question. If something is already asking to
+  // move the number, that is the more useful thing on screen.
   if (pendingProposals.some((p) => p.field === 'ftp')) return null;
+  // 'questioned' already renders its own request for an effort.
+  if (standing.standing === 'questioned') return null;
 
   return {
     kind: 'threshold_stale',
-    ageDays: age,
+    ageDays: standing.ageDays,
     message:
-      `Your threshold is ${age} days old and nothing has tested it directly since. Your efficiency has not ` +
-      `moved enough to question it, so it is probably still about right — but every zone, every TSS figure ` +
-      `and every verdict in the app rests on it. Next time a hard 20-minute effort fits the plan, take it.`,
+      `Your threshold has stood for ${standing.ageDays} days and nothing has tested it directly in that time. ` +
+      (standing.standing === 'holding'
+        ? 'Your efficiency says it is still right, so there is no urgency — but next time a hard 20-minute effort fits the plan, take it.'
+        : 'There has not been enough comparable riding to confirm it either way. A 20-minute effort would put it back on solid ground.'),
   };
 }
 
-function daysSinceAcceptedFtpChange(decisions, profile, now) {
-  let latest = null;
-  for (const d of decisions || []) {
-    if (d.field !== 'ftp' || d.action !== 'accepted') continue;
-    const t = new Date(d.date).getTime();
-    if (Number.isFinite(t) && (latest == null || t > latest)) latest = t;
-  }
-  // A profile edited directly, or seeded at onboarding, leaves no decision
-  // record — fall back to when the number was set, or the last bump.
-  for (const stamp of [profile?.ftpSetAt, profile?.lastBumpAt]) {
-    if (!stamp) continue;
-    const t = new Date(stamp).getTime();
-    if (Number.isFinite(t) && (latest == null || t > latest)) latest = t;
-  }
-  return latest == null ? null : (now - latest) / 86400000;
-}
-
-const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+const EF_AGREEMENT = STANDING.agreementFraction;
+const clampPct = (v, max) => Math.min(max, Math.max(-max, Number(v.toFixed(2))));
+const zoneLabel = (zone) =>
+  ({ Z2_Endurance: 'endurance riding', Z3_Tempo: 'tempo', Z4_Threshold: 'threshold work' }[zone] || zone);
 
 function exceeds(a, b, rules) {
   const delta = Math.abs(a - b);

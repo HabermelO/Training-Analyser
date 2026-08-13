@@ -71,6 +71,26 @@ export const WORKOUTS = [
     },
   },
   {
+    // The bottom of the aerobic range, and the answer to a grey block. The
+    // library previously had nothing between a 0.68 endurance ride and a
+    // 45-minute recovery spin, so "make the easy days easier" had to be
+    // spent as lost volume. This keeps the hours and drops the intensity,
+    // which is the correction a middle-heavy distribution actually needs.
+    id: 'endurance_easy',
+    systm: 'Fondo Fizz',
+    adaptation: 'aerobic_base',
+    durationMin: 90,
+    tss: 55,
+    if: 0.60,
+    warmupMin: 0, cooldownMin: 0,
+    work: { reps: 1, onMin: 90, offMin: 0, onPctCp: 0.60 },
+    outdoor: {
+      name: 'Low endurance',
+      prescription:
+        'Low Z2 throughout, nearer the Z1 boundary than the Z3 one. Choose flat roads deliberately — the point of this ride is that nothing on it is hard.',
+    },
+  },
+  {
     id: 'sweetspot_blocks',
     systm: 'Tune Up',
     adaptation: 'sweetspot',

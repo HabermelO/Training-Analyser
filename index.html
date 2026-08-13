@@ -328,6 +328,40 @@ ul.notes li { margin-bottom: .3rem; }
 .zonebar-fill { display: block; height: 100%; border-radius: 100px; transition: width .5s cubic-bezier(.2,.8,.2,1); }
 .zonebar-value { font: 500 .78rem/1 var(--mono); color: var(--ink-soft); text-align: right; }
 
+/* --- intensity distribution ------------------------------------------ */
+.tidbar { display: flex; flex-direction: column; gap: .7rem; }
+.tidbar-track {
+  display: flex; height: 1.6rem; border-radius: 100px; overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.tidbar-seg {
+  display: flex; align-items: center; justify-content: center;
+  font: 700 .68rem/1 var(--mono); color: #fff;
+  transition: width .5s cubic-bezier(.2,.8,.2,1);
+}
+.tidbar-seg-moderate { color: #3D2A00; }
+.tidbar-key { display: flex; gap: .9rem; flex-wrap: wrap; }
+.tidbar-keyitem {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font: 500 .74rem/1 var(--mono); color: var(--muted);
+}
+.tidbar-dot { width: .55rem; height: .55rem; border-radius: 2px; }
+
+/* --- today card ------------------------------------------------------ */
+.today-head { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .4rem; }
+.today-title { font: 700 1.1rem/1.25 var(--body); color: var(--ink); }
+.trace { list-style: none; margin: .9rem 0 0; padding: 0;
+         border-left: 2px solid var(--line); }
+.trace li { display: grid; grid-template-columns: 6.5rem 1fr; gap: .7rem;
+            padding: .45rem 0 .45rem .9rem; }
+.trace-step { font: 600 .66rem/1.4 var(--mono); text-transform: uppercase;
+              letter-spacing: .06em; color: var(--muted); }
+.trace-body { font-size: .84rem; color: var(--ink-soft); }
+.trace-value { font: 600 .84rem/1.4 var(--mono); color: var(--ink); }
+@media (max-width: 560px) {
+  .trace li { grid-template-columns: 1fr; gap: .1rem; }
+}
+
 /* --- zones strip ----------------------------------------------------- */
 .zonestrip { display: flex; gap: .35rem; flex-wrap: wrap; }
 .zonechip {
@@ -357,6 +391,7 @@ ul.notes li { margin-bottom: .3rem; }
   transition: background .15s, border-color .15s;
 }
 .day.is-today { border-color: var(--power); background: #FFFDF6; }
+.day.is-past { opacity: .55; background: var(--surface-2); }
 .day.is-drop { border-color: var(--load); border-style: dashed; background: #F2F6FF; }
 .day-head { display: flex; align-items: baseline; justify-content: space-between; }
 .day-name { font: 600 .66rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
