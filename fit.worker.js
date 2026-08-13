@@ -68,6 +68,16 @@ export function parseFitBuffer(buffer, athlete = {}, opts = {}) {
         result.laps = normaliseLaps(data.laps);
         result.device = data.file_ids?.[0]?.manufacturer ?? null;
         result.sport = data.sessions?.[0]?.sport ?? null;
+        // The FTP configured on the head unit. Stronger evidence than anything
+        // we can model, so athlete.js prefers it — but it is whatever the rider
+        // last typed into their device, not a measurement.
+        result.declaredFtp = num(data.sessions?.[0]?.threshold_power);
+        // The device's own NP/TSS/IF, kept for the cross-check in test/parse.js.
+        result.deviceMetrics = {
+          np: num(data.sessions?.[0]?.normalized_power),
+          tss: num(data.sessions?.[0]?.training_stress_score),
+          if: num(data.sessions?.[0]?.intensity_factor),
+        };
         resolve(result);
       } catch (e) {
         reject(e);
