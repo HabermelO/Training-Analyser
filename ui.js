@@ -43,12 +43,55 @@ export function card(title, opts = {}) {
 }
 
 /**
- * A number with its label and unit. `tone` picks the metric colour so the
- * same quantity reads the same way on every screen.
+ * Short definitions for the quantities the app models but has never explained.
+ * The stat note is a label; this is the answer to "yes, but what IS that".
+ */
+export const GLOSSARY = {
+  ctl: 'Chronic training load — an exponentially weighted average of your daily training stress over about six weeks. It moves slowly and stands in for fitness.',
+  atl: 'Acute training load — the same average over about a week. It moves fast and stands in for fatigue.',
+  tsb: 'Training stress balance — fitness minus fatigue. Positive means fresher than your recent training; negative means you are carrying load. Neither is good or bad on its own; it depends what you are doing next.',
+  tss: 'Training stress score — one hour at your threshold is 100. It combines how long you rode with how hard, so a long easy ride and a short hard one can score the same.',
+  np: 'Normalised power — what a ride cost you physiologically, as opposed to average power, which under-reads any ride with surges in it.',
+  if: 'Intensity factor — normalised power as a fraction of your threshold. 1.0 is an hour at threshold.',
+  ftp: 'Functional threshold power — roughly the highest power you could hold for an hour. Every zone and every TSS figure in the app is derived from it.',
+  ef: 'Efficiency factor — normalised power per heartbeat. Rising over weeks at the same heart rate is aerobic fitness improving.',
+  drift: 'Aerobic decoupling — how much the power-to-heart-rate relationship fell away over the ride. Above about 5% on a steady ride suggests the effort was beyond your current aerobic durability.',
+  readiness: 'How today\'s HRV and resting heart rate compare with your own recent baseline. It can veto intensity; it never prescribes it.',
+};
+
+/**
+ * A number with its label and unit. `tone` picks the metric colour so the same
+ * quantity reads the same way on every screen.
+ *
+ * `lead` promotes one stat in a row to a larger size — a row where everything
+ * is equally loud tells the athlete nothing about what to act on. `define`
+ * turns the label into the tap target for a short definition, since the app
+ * models sophisticated quantities and otherwise explains them in six words.
  */
 export function stat(label, value, opts = {}) {
-  const s = el('div', 'stat');
-  s.append(el('div', 'stat-label', label));
+  const s = el('div', `stat${opts.lead ? ' stat-lead' : ''}`);
+
+  if (opts.define && GLOSSARY[opts.define]) {
+    const btn = el('button', 'stat-label stat-label-define');
+    btn.type = 'button';
+    btn.append(document.createTextNode(label));
+    btn.append(el('span', 'stat-define-mark', '?'));
+    btn.setAttribute('aria-expanded', 'false');
+    btn.title = `What is ${label}?`;
+
+    const def = el('div', 'stat-def', GLOSSARY[opts.define]);
+    def.hidden = true;
+
+    btn.addEventListener('click', () => {
+      def.hidden = !def.hidden;
+      btn.setAttribute('aria-expanded', String(!def.hidden));
+    });
+    s.append(btn);
+    s.__def = def;   // appended after the value, below
+  } else {
+    s.append(el('div', 'stat-label', label));
+  }
+
   const v = el('div', 'stat-value');
   v.textContent = value ?? '—';
   if (opts.tone) v.style.color = METRIC_COLOUR[opts.tone] || opts.tone;
@@ -58,6 +101,24 @@ export function stat(label, value, opts = {}) {
   }
   s.append(v);
   if (opts.note) s.append(el('div', 'stat-note', opts.note));
+  if (s.__def) { s.append(s.__def); delete s.__def; }
+  return s;
+}
+
+/**
+ * Placeholder shaped like the thing that is coming. A skeleton says "prose
+ * belongs here and is on its way"; a percentage says nothing at all to
+ * somebody who did not ask for a download.
+ */
+export function skeleton(lines = 2) {
+  const s = el('div', 'skeleton');
+  s.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < lines; i++) {
+    const line = el('span', 'skeleton-line');
+    // Last line short, so the block reads as a paragraph rather than a table.
+    if (i === lines - 1) line.style.width = '62%';
+    s.append(line);
+  }
   return s;
 }
 
@@ -111,19 +172,42 @@ export function button(label, opts = {}) {
   return b;
 }
 
-/** Non-blocking confirmation. Errors state what happened; they don't apologise. */
+/**
+ * Non-blocking confirmation. Errors state what happened; they don't apologise.
+ *
+ * `opts.action` puts a button in the toast — used for undo, where the window
+ * in which reversing is cheap is exactly the window the toast is up for.
+ */
 let toastTimer = null;
-export function toast(message, tone = 'ok') {
+export function toast(message, tone = 'ok', opts = {}) {
   let t = $('#toast');
   if (!t) {
     t = el('div', 'toast');
     t.id = 'toast';
+    t.setAttribute('role', 'status');
     document.body.append(t);
   }
+  clear(t);
   t.className = `toast toast-${tone} is-visible`;
-  t.textContent = message;
+  t.append(el('span', 'toast-text', message));
+
+  // An action gets longer on screen. Four seconds is enough to read a
+  // confirmation and not enough to decide you did not mean it.
+  let life = 3600;
+  if (opts.action) {
+    life = opts.life ?? 9000;
+    const b = el('button', 'toast-action', opts.action.label);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      t.classList.remove('is-visible');
+      clearTimeout(toastTimer);
+      opts.action.onClick();
+    });
+    t.append(b);
+  }
+
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('is-visible'), 3600);
+  toastTimer = setTimeout(() => t.classList.remove('is-visible'), life);
 }
 
 /**

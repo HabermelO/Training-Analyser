@@ -36,11 +36,26 @@ const WORD_NUMBERS = {
  */
 export function allowedNumbers(v) {
   const allowed = new Set();
-  const add = (x) => { for (const { n } of numbersIn(x)) allowed.add(n); };
+  const add = (x) => {
+    for (const { n } of numbersIn(x)) allowed.add(n);
+    // Also license cardinals the ENGINE wrote. Without this the check is
+    // asymmetric: the model is judged on written-out numbers but only credited
+    // for digits, so an engine string containing a word-number makes that word
+    // unsayable. "Nine Hammers" is a workout in the library, and the model
+    // naming the session it was told to narrate is not a fabrication.
+    const text = String(x ?? '').toLowerCase();
+    for (const [word, n] of Object.entries(WORD_NUMBERS)) {
+      if (new RegExp(`\\b${word}\\b`).test(text)) allowed.add(n);
+    }
+  };
 
   for (const e of v.keyEvidence || []) { add(e.value); add(e.label); }
   for (const f of v.executionFlags || []) add(f.detail);
   for (const n of v.readiness?.notes || []) add(n);
+  // Engine-authored strings that are shown to the model but are not evidence —
+  // a session name, a headline. Their numbers are citable because the engine
+  // put them in front of the model in the first place.
+  for (const t of v.allowedText || []) add(t);
   add(v.load?.ctl);
   add(v.load?.tsb);
 
@@ -104,12 +119,26 @@ export function validateNarration(text, v, opts = {}) {
     violations.push({ kind: 'length', token: String(words), detail: `${words} words, expected ${min}-${max}` });
   }
 
+  // Length on its own is not fatal — a 200-word answer to a 150-word brief is
+  // still an answer. Nothing at all is a different thing entirely, and it was
+  // slipping through as a valid narration because it was only ever counted as
+  // a length problem. A blank summary card is worse than the template.
+  if (words < 10) {
+    violations.push({
+      kind: 'empty',
+      token: String(words),
+      detail: words === 0 ? 'the model returned nothing' : `only ${words} words returned`,
+    });
+  }
+
   // Anything that reads like the model estimating fitness itself. FTP is not
   // in the prompt at all, so any mention of it is invention by definition.
   if (/\b(FTP|critical power|CP)\b/i.test(text)) {
     violations.push({ kind: 'out_of_scope', token: 'ftp', detail: 'narration must not discuss FTP; ftp.js owns that judgement' });
   }
 
+  // 'length' alone is a style miss, not a correctness failure. Everything
+  // else — fabrication, wrong sign, markdown, out of scope, empty — is.
   const fatal = violations.filter((x) => x.kind !== 'length');
   return { ok: fatal.length === 0, violations, words };
 }
@@ -125,6 +154,7 @@ export function repairInstruction(violations) {
   if (signWrong.length) notes.push(`These numbers have the wrong sign — copy them exactly as written in the EVIDENCE: ${[...new Set(signWrong)].join(', ')}.`);
   if (violations.some((v) => v.kind === 'formatting')) notes.push('Write flowing prose only — no bullets, no headings.');
   if (violations.some((v) => v.kind === 'out_of_scope')) notes.push('Do not mention FTP or critical power.');
+  if (violations.some((v) => v.kind === 'empty')) notes.push('Your previous attempt was empty. Write the full paragraph.');
   if (violations.some((v) => v.kind === 'length')) notes.push('Keep it to a single paragraph of roughly 150 words.');
   return notes.join(' ') + ' Rewrite the paragraph.';
 }

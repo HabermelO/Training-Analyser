@@ -6,9 +6,10 @@
 import { store, todayIso } from './store.js';
 import { deriveAthlete, explainProfile } from './athlete.js';
 import { onboardingProfile } from './proposals.js';
+import { assessThresholdStanding } from './standing.js';
 import {
   el, card, stat, statRow, field, numberInput, textInput, button, toast,
-  badge, fmt, clear,
+  badge, note, fmt, clear,
 } from './ui.js';
 
 export function renderProfile(root, ctx) {
@@ -83,7 +84,7 @@ export function renderProfile(root, ctx) {
     : null;
 
   worked.body.append(statRow([
-    stat('Threshold', derived.ftp ?? '—', { unit: derived.ftp ? 'W' : '', tone: 'ftp' }),
+    stat('Threshold', derived.ftp ?? '—', { unit: derived.ftp ? 'W' : '', tone: 'ftp', define: 'ftp' }),
     stat('Watts / kg', wkg ?? '—', { tone: 'ftp', note: saved.weightKg ? null : 'Add your weight' }),
     stat('Max heart rate', derived.maxHr ?? '—', { unit: derived.maxHr ? 'bpm' : '', tone: 'rhr' }),
     stat('Confidence', fmt.title(derived.status), {}),
@@ -92,6 +93,23 @@ export function renderProfile(root, ctx) {
   const prov = el('ul', 'notes');
   for (const line of explainProfile(derived)) prov.append(el('li', null, line));
   worked.body.append(prov);
+
+  // Whether the threshold above is still standing up. This used to render on
+  // the ride tab, under a specific session — but it is a statement about the
+  // athlete drawn from weeks of evidence, not about that ride, and it belongs
+  // beside the declared-and-derived pair it is judging. The per-ride
+  // *proposal* stays on Ride, where the triggering evidence is the context.
+  if (rides.length && derived.ftp) {
+    const standing = assessThresholdStanding(rides, derived);
+    if (standing.message && standing.standing !== 'unknown') {
+      worked.body.append(el('h3', 'sub', 'Is it still right?'));
+      const row = el('div', 'standing-head');
+      row.append(badge(fmt.title(standing.standing), standing.standing === 'holding' ? 'good' : 'signal'));
+      worked.body.append(row);
+      worked.body.append(el('p', null, standing.message));
+      if (standing.action?.suggestion) worked.body.append(note(standing.action.suggestion, 'signal'));
+    }
+  }
 
   if (derived.hrZones) {
     const zones = el('div', 'zonestrip');
@@ -112,6 +130,10 @@ export function renderProfile(root, ctx) {
   }
 
   // --- your data -----------------------------------------------------
+  // Everything lives in localStorage, which a browser tidy-up, a private
+  // window or an iOS storage-pressure eviction will clear without asking. For
+  // an app whose entire value is longitudinal, that is data loss with no
+  // recovery, so export is not a power-user feature — it is the backstop.
   const data = card('Your data', { hint: 'Stored on this device only' });
   const actions = el('div', 'actions');
 
@@ -123,7 +145,7 @@ export function renderProfile(root, ctx) {
       a.download = `training-analyser-${todayIso()}.json`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast('Backup downloaded');
+      toast(`Backup downloaded — ${rides.length} ride${rides.length === 1 ? '' : 's'}`);
     },
   }));
 
@@ -135,12 +157,31 @@ export function renderProfile(root, ctx) {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
+
+    let payload;
     try {
-      store.importAll(JSON.parse(await f.text()));
-      toast('Backup restored');
+      payload = JSON.parse(await f.text());
+    } catch (err) {
+      return toast(`That file could not be read: ${err.message}`, 'warn');
+    }
+
+    // Restoring replaces, it does not merge — merging two histories would
+    // need a conflict rule for every key and would silently invent one. So it
+    // asks, and it says what is about to be lost, in counts rather than in
+    // the abstract.
+    const incoming = Array.isArray(payload.rides) ? payload.rides.length : 0;
+    const here = rides.length;
+    const warning = here
+      ? `Restore this backup? It has ${incoming} ride${incoming === 1 ? '' : 's'} and will replace the ${here} currently on this device. That cannot be undone.`
+      : `Restore this backup? It has ${incoming} ride${incoming === 1 ? '' : 's'}.`;
+    if (!confirm(warning)) return;
+
+    try {
+      const result = store.importAll(payload);
+      toast(`Restored ${result.rides} ride${result.rides === 1 ? '' : 's'}`);
       ctx.refresh();
     } catch (err) {
-      toast(`That file could not be read: ${err.message}`, 'warn');
+      toast(`That backup could not be restored: ${err.message}`, 'warn');
     }
   });
   actions.append(button('Restore a backup', { onClick: () => importer.click() }), importer);
@@ -157,7 +198,7 @@ export function renderProfile(root, ctx) {
 
   data.body.append(actions);
   data.body.append(el('p', 'note',
-    'Nothing is uploaded anywhere. That also means clearing your browser data clears this, so keep a backup.'));
+    'Nothing is uploaded anywhere. That also means clearing your browser data clears this — and a phone low on space may clear it for you. A backup is the only copy that survives that, so take one now and again.'));
 
   root.append(you, phys, worked, data);
 }

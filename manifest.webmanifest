@@ -1,0 +1,38 @@
+{
+  "name": "Training Analyser",
+  "short_name": "Training",
+  "description": "On-device cycling performance analysis. Nothing leaves your phone.",
+  "start_url": "./index.html#today",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F2F5F3",
+  "theme_color": "#F2F5F3",
+  "categories": ["health", "fitness", "sports"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add a ride",
+      "short_name": "Add ride",
+      "url": "./index.html#ride"
+    },
+    {
+      "name": "Trends",
+      "short_name": "Trends",
+      "url": "./index.html#trends"
+    }
+  ]
+}

@@ -15,29 +15,68 @@ silently.
 
 ## Tabs
 
-**Analyse** — drop in a ride. Two-pass parse: the file is read once with no
-profile (peak powers, heart rate, duration and normalised power need no
-threshold), the profile is derived from that evidence, then the ride is
-recomputed with zones, TSS and classification. Assuming a threshold in order to
-compute the evidence that produces it would be circular, and the numbers would
-look plausible while being wrong.
+Ordered by how often the question is asked, not by how the data flows.
 
-**History** — a daily check-in for HRV, resting heart rate, sleep and how you
-feel, then the long view. Fitness, fatigue and form share the left axis; heart
-rate, threshold and power-per-beat are on the right, marked `R`, because those
-quantities do not share a unit and plotting them together would imply a
-comparison that does not exist.
-
-**Plan** — the week the engine suggests, with what each session is for. Drag a
+**Today** — the daily check-in for HRV, resting heart rate, sleep and how you
+feel, then one session and the reasoning that chose it. The check-in sits here
+rather than with the history because it is an *input* to readiness, which is
+the veto term in the plan; parked on a tab nobody opens daily, it never
+accumulated the fourteen days the personal baseline needs. Below the session
+card is the week the engine suggests, with what each session is for. Drag a
 session to another day, or tap it and tap the day. Dropping onto an occupied
 day swaps the two rather than deleting one. Moves are stored as overrides
 keyed by date, so they survive the plan being recomputed; "Reset to suggested"
 always gets you back.
 
+**Ride** — drop in one or several `.fit` files. Two-pass parse: the file is
+read once with no profile (peak powers, heart rate, duration and normalised
+power need no threshold), the profile is derived from that evidence, then the
+ride is recomputed with zones, TSS and classification. Assuming a threshold in
+order to compute the evidence that produces it would be circular, and the
+numbers would look plausible while being wrong. Batches are processed in
+sequence, oldest first, so each ride is judged against the ones before it.
+
+Verdicts are stored alongside the ride summary, so returning to this tab shows
+your last analysis with no file. What is kept is the computed detail, not the
+record stream. Each stored verdict is stamped with the threshold that produced
+it; if your FTP has moved since, the tab says so rather than recomputing —
+recomputing would rewrite your history.
+
+**Trends** — the long view. Fitness, fatigue and form share the left axis;
+heart rate, threshold and power-per-beat are on the right, marked `R`, because
+those quantities do not share a unit and plotting them together would imply a
+comparison that does not exist. Form leads the summary row because it is the
+one that changes what you do today. Tap any stat label for a definition.
+
 **Profile** — what you know about yourself, and what the app worked out, shown
 side by side. A number you typed and a number modelled from your riding are
-different kinds of fact and the screen does not blur them. Export and restore
-live here too.
+different kinds of fact and the screen does not blur them. Whether your
+threshold still stands is judged here, next to the number it is judging.
+Export and restore live here too, and you should use them: everything is in
+localStorage, which a browser tidy-up or a phone low on space will clear
+without asking.
+
+### Landing
+
+Today, unless there are no rides *and* no declared threshold — a plan cannot
+render without one, and landing on a dead end is a bad first impression, so
+first runs go to Profile. A URL hash always wins. The old `#analyse`,
+`#history` and `#plan` hashes still resolve.
+
+## Offline and install
+
+A manifest and a service worker cache the modules and fonts, so the app
+installs to a home screen and opens with no network. Model weights are
+deliberately *not* cached — WebLLM already keeps them in IndexedDB, and a
+second copy of the largest asset in the app helps nobody. The worker passes
+those requests straight through.
+
+## Dark mode
+
+Every colour is a custom property, so dark mode is one block redefining
+`:root`. Surfaces invert to deep slate rather than black; the metric families
+keep their hue and lift in lightness, because a family that changes hue
+between themes breaks the one rule the palette teaches.
 
 ## Colour
 

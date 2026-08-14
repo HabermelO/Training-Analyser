@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#F2F5F3">
+<meta name="theme-color" content="#F2F5F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F171D" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
 <title>Training Analyser</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,7 +43,11 @@
   /* text */
   --ink:        #17242E;   /* deep slate, never black */
   --ink-soft:   #4A5C68;
-  --muted:      #7A8C95;
+  /* Was #7A8C95, which measures 3.3:1 on --surface-2 and 3.2:1 on --paper —
+     under 4.5:1 on every ground it is used on, and it is used for chart axis
+     labels, stat notes and every hint in the app. Darkened until it passes on
+     the worst of them (4.7:1 on --paper). */
+  --muted:      #5F7079;
 
   /* metric families — assigned, not decorative */
   --power:      #F2A900;   /* maglia gialla — power, threshold, NP */
@@ -62,14 +70,138 @@
   --signal:     #D98A00;
   --warn:       #CE4A38;
 
+  /* Tints and inks derived from the state colours. These exist as variables
+     rather than literals so dark mode is one block that redefines :root and
+     nothing else — a hardcoded #FFF7E6 is a light-mode assumption hiding
+     inside a component. */
+  --tint-good:      #E7F5EF;
+  --tint-good-line: #C7E8DA;
+  --ink-good:       #0C6B4C;
+  --tint-signal:      #FFF7E6;
+  --tint-signal-2:    #FFF4DC;
+  --tint-signal-line: #F5E1B4;
+  --ink-signal:       #8A5A00;
+  --tint-warn:      #FDEEEB;
+  --tint-warn-2:    #FDEBE8;
+  --tint-warn-line: #F5CDC5;
+  --ink-warn:       #932E1E;
+  --ink-warn-deep:  #8A2A1C;
+
+  /* Tinted grounds for the two families that use one: power (today, hover)
+     and load (drop targets). */
+  --tint-power: #FFFDF6;
+  --tint-load:  #F2F6FF;
+
+  /* Foreground on a --power ground. Power lifts in dark mode rather than
+     darkening, so this stays dark in both — but it is a variable now, so the
+     day it needs to flip, it flips in one place. */
+  --on-power:   #3D2A00;
+
+  /* A surface that must sit above --surface-2 (chips on calendar days, the
+     active legend pill). White in light mode; NOT white in dark. */
+  --surface-3:  #FFFFFF;
+  --ink-invert: #FFFFFF;
+  --ink-press:  #0F1B24;
+
   --radius:     14px;
   --radius-sm:  9px;
   --shadow:     0 1px 2px rgba(23,36,46,.05), 0 8px 24px -12px rgba(23,36,46,.16);
   --shadow-lift:0 2px 6px rgba(23,36,46,.07), 0 18px 40px -18px rgba(23,36,46,.24);
 
+  --bar:        rgba(242,245,243,.86);
+  --tab-hover:  rgba(255,255,255,.6);
+
   --display: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --body:    'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono:    'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------------------------------------------------------------------
+   Dark mode. Every colour above is a custom property, so this is a single
+   block that redefines :root and touches nothing else.
+
+   Two rules govern it. Surfaces invert to deep slate rather than black —
+   the app never used black in light mode either, and a pure black ground
+   makes the jersey colours glare. And the metric families keep their hue
+   but lift 8-12% in lightness: the palette's whole premise is that a
+   colour names a metric family, so a family that changes hue between
+   themes breaks the one rule the athlete has learned.
+   --------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* surfaces */
+    --paper:      #0F171D;
+    --surface:    #17222B;
+    --surface-2:  #1D2A34;
+    --surface-3:  #24333E;
+    --line:       #2A3A46;
+    --line-strong:#3B4E5C;
+
+    /* text */
+    --ink:        #E8EEF1;
+    --ink-soft:   #B4C3CC;
+    /* Lifted well above the light-mode #7A8C95, which was already close to
+       the 4.5:1 line and would fail outright on this ground. */
+    --muted:      #8FA3AD;
+
+    /* metric families — same hue, lifted for contrast on dark ground */
+    --power:      #FFC02E;
+    --cardiac:    #F4658C;
+    --hrv:        #C96AA6;
+    --load:       #5B8DF6;
+    --fatigue:    #F27C58;
+    --fresh:      #2BB98A;
+    --effic:      #35AFC7;
+
+    /* training zones */
+    --recovery:   #97C5D9;
+    --endurance:  #55B892;
+    --tempo:      #F0C46B;
+    --threshold:  #F09A5C;
+    --vo2:        #E8697D;
+
+    /* state */
+    --good:       #2BB98A;
+    --signal:     #EFA92B;
+    --warn:       #E86B58;
+
+    /* Tints become low-alpha washes of their own state colour rather than
+       pale pastels — a pastel on dark ground is a light patch, not a tint. */
+    --tint-good:      #143A2E;
+    --tint-good-line: #1E5744;
+    --ink-good:       #7FD9B7;
+    --tint-signal:      #3A2E14;
+    --tint-signal-2:    #40331A;
+    --tint-signal-line: #5E4A1E;
+    --ink-signal:       #F0CB86;
+    --tint-warn:      #3A1E19;
+    --tint-warn-2:    #42221C;
+    --tint-warn-line: #63332A;
+    --ink-warn:       #F2A899;
+    --ink-warn-deep:  #F2A899;
+
+    --tint-power: #2A2415;
+    --tint-load:  #182538;
+
+    /* Power lifts rather than darkens, so dark text still holds on it. */
+    --on-power:   #2A1D00;
+    --ink-invert: #0F171D;
+    --ink-press:  #F4F8FA;
+
+    --bar:        rgba(15,23,29,.86);
+    --tab-hover:  rgba(255,255,255,.06);
+
+    /* Shadow on a dark ground reads as murk, not lift. Depth comes from the
+       surface steps instead, so these shrink to almost nothing. */
+    --shadow:     0 1px 2px rgba(0,0,0,.4);
+    --shadow-lift:0 2px 8px rgba(0,0,0,.5);
+  }
+
+  /* Primary buttons invert with the ink they are built from — on dark, the
+     ink IS the page, so a button painted in it would disappear. */
+  .btn-primary { background: var(--ink); border-color: var(--ink); color: var(--ink-invert); }
+  .btn-primary:hover { background: var(--ink-press); }
+  .toast { background: var(--surface-3); color: var(--ink); border: 1px solid var(--line-strong); }
 }
 
 * { box-sizing: border-box; }
@@ -87,7 +219,7 @@ body {
 /* --- app bar --------------------------------------------------------- */
 .appbar {
   position: sticky; top: 0; z-index: 20;
-  background: rgba(242,245,243,.86);
+  background: var(--bar);
   backdrop-filter: saturate(1.4) blur(12px);
   border-bottom: 1px solid var(--line);
 }
@@ -106,7 +238,7 @@ body {
 .who { font: 600 .85rem/1 var(--body); color: var(--ink-soft); }
 .ftp-chip {
   display: inline-flex; align-items: baseline; gap: .15rem;
-  background: var(--power); color: #3D2A00;
+  background: var(--power); color: var(--on-power);
   padding: .3rem .6rem; border-radius: 100px;
   font: 700 .9rem/1 var(--mono);
 }
@@ -126,7 +258,7 @@ body {
   transition: color .15s, border-color .15s, background .15s;
   white-space: nowrap;
 }
-.tab:hover { color: var(--ink); background: rgba(255,255,255,.6); }
+.tab:hover { color: var(--ink); background: var(--tab-hover); }
 .tab.is-active { color: var(--ink); border-bottom-color: var(--power); }
 .tab:focus-visible { outline: 2px solid var(--load); outline-offset: -2px; }
 
@@ -173,9 +305,9 @@ h3.sub {
 
 /* --- text ------------------------------------------------------------ */
 .note { font-size: .875rem; color: var(--ink-soft); margin: .7rem 0 0; }
-.note.signal { color: #8A5A00; background: #FFF7E6; border-left: 2.5px solid var(--signal);
+.note.signal { color: var(--ink-signal); background: var(--tint-signal); border-left: 2.5px solid var(--signal);
                padding: .55rem .8rem; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
-.note.warn   { color: #8A2A1C; background: #FDEEEB; border-left: 2.5px solid var(--warn);
+.note.warn   { color: var(--ink-warn-deep); background: var(--tint-warn); border-left: 2.5px solid var(--warn);
                padding: .55rem .8rem; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 .muted { color: var(--muted); }
 ul.notes { margin: .7rem 0 0; padding-left: 1.05rem; color: var(--ink-soft); font-size: .875rem; }
@@ -188,9 +320,9 @@ ul.notes li { margin-bottom: .3rem; }
   padding: .32rem .55rem; border-radius: 100px;
   background: var(--surface-2); color: var(--ink-soft); border: 1px solid var(--line);
 }
-.badge-good   { background: #E7F5EF; color: #0C6B4C; border-color: #C7E8DA; }
-.badge-signal { background: #FFF4DC; color: #8A5A00; border-color: #F5E1B4; }
-.badge-warn   { background: #FDEBE8; color: #932E1E; border-color: #F5CDC5; }
+.badge-good   { background: var(--tint-good); color: var(--ink-good); border-color: var(--tint-good-line); }
+.badge-signal { background: var(--tint-signal-2); color: var(--ink-signal); border-color: var(--tint-signal-line); }
+.badge-warn   { background: var(--tint-warn-2); color: var(--ink-warn); border-color: var(--tint-warn-line); }
 
 /* --- buttons --------------------------------------------------------- */
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
@@ -204,12 +336,12 @@ ul.notes li { margin-bottom: .3rem; }
 .btn:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
 .btn:active { transform: translateY(0); }
 .btn:focus-visible { outline: 2px solid var(--load); outline-offset: 2px; }
-.btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
-.btn-primary:hover { background: #0F1B24; }
+.btn-primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn-primary:hover { background: var(--ink-press); }
 .btn-quiet { border-color: transparent; background: transparent; color: var(--muted); padding: .4rem .6rem; }
 .btn-quiet:hover { color: var(--ink); background: var(--surface-2); box-shadow: none; }
-.btn-danger { border-color: #F0C9C2; color: var(--warn); }
-.btn-danger:hover { background: #FDEBE8; }
+.btn-danger { border-color: var(--tint-warn-line); color: var(--warn); }
+.btn-danger:hover { background: var(--tint-warn-2); }
 
 /* --- fields ---------------------------------------------------------- */
 .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .9rem; }
@@ -226,7 +358,7 @@ ul.notes li { margin-bottom: .3rem; }
   transition: border-color .15s, background .15s;
 }
 .field input:hover { border-color: var(--line-strong); }
-.field input:focus { outline: none; border-color: var(--load); background: #fff;
+.field input:focus { outline: none; border-color: var(--load); background: var(--surface-3);
                      box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
 
 /* --- dropzone -------------------------------------------------------- */
@@ -238,13 +370,13 @@ ul.notes li { margin-bottom: .3rem; }
   transition: border-color .18s, background .18s, transform .18s;
 }
 .dropzone:hover, .dropzone.is-over {
-  border-color: var(--power); background: #FFFDF6; transform: translateY(-2px);
+  border-color: var(--power); background: var(--tint-power); transform: translateY(-2px);
 }
 .dropzone.is-over { border-style: solid; }
 .dropzone:focus-visible { outline: 2px solid var(--load); outline-offset: 3px; }
 .dropzone-icon {
   width: 2.4rem; height: 2.4rem; display: grid; place-items: center;
-  border-radius: 100px; background: var(--power); color: #3D2A00;
+  border-radius: 100px; background: var(--power); color: var(--on-power);
   font: 700 1.1rem/1 var(--mono); margin-bottom: .35rem;
 }
 .dropzone strong { color: var(--ink); font: 700 1.02rem/1.2 var(--display); }
@@ -309,8 +441,9 @@ ul.notes li { margin-bottom: .3rem; }
   transition: color .15s, border-color .15s, background .15s;
 }
 .legend-chip:hover:not(:disabled) { border-color: var(--line-strong); color: var(--ink); }
+.legend-chip:focus-visible { outline: 2px solid var(--load); outline-offset: 2px; }
 .legend-chip:disabled { opacity: .4; cursor: default; }
-.legend-chip.is-on { color: var(--ink); background: #fff; border-color: var(--chip); }
+.legend-chip.is-on { color: var(--ink); background: var(--surface-3); border-color: var(--chip); }
 .legend-swatch { width: .55rem; height: .55rem; border-radius: 2px; background: var(--chip); opacity: .35; }
 .legend-chip.is-on .legend-swatch { opacity: 1; }
 .legend-axis { font: 600 .6rem/1 var(--mono); color: var(--muted); border: 1px solid var(--line);
@@ -336,10 +469,10 @@ ul.notes li { margin-bottom: .3rem; }
 }
 .tidbar-seg {
   display: flex; align-items: center; justify-content: center;
-  font: 700 .68rem/1 var(--mono); color: #fff;
+  font: 700 .68rem/1 var(--mono); color: var(--surface);
   transition: width .5s cubic-bezier(.2,.8,.2,1);
 }
-.tidbar-seg-moderate { color: #3D2A00; }
+.tidbar-seg-moderate { color: var(--on-power); }
 .tidbar-key { display: flex; gap: .9rem; flex-wrap: wrap; }
 .tidbar-keyitem {
   display: inline-flex; align-items: center; gap: .35rem;
@@ -390,9 +523,9 @@ ul.notes li { margin-bottom: .3rem; }
   display: flex; flex-direction: column; gap: .45rem;
   transition: background .15s, border-color .15s;
 }
-.day.is-today { border-color: var(--power); background: #FFFDF6; }
+.day.is-today { border-color: var(--power); background: var(--tint-power); }
 .day.is-past { opacity: .55; background: var(--surface-2); }
-.day.is-drop { border-color: var(--load); border-style: dashed; background: #F2F6FF; }
+.day.is-drop { border-color: var(--load); border-style: dashed; background: var(--tint-load); }
 .day-head { display: flex; align-items: baseline; justify-content: space-between; }
 .day-name { font: 600 .66rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .day-num { font: 600 .9rem/1 var(--mono); color: var(--ink-soft); }
@@ -401,7 +534,7 @@ ul.notes li { margin-bottom: .3rem; }
 .chip {
   display: flex; flex-direction: column; gap: .25rem; cursor: grab;
   padding: .5rem .55rem; border-radius: 8px;
-  background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--line-strong);
+  background: var(--surface-3); border: 1px solid var(--line); border-left: 3px solid var(--line-strong);
   box-shadow: 0 1px 2px rgba(23,36,46,.05);
   transition: box-shadow .15s, transform .12s;
 }
@@ -410,7 +543,7 @@ ul.notes li { margin-bottom: .3rem; }
 .chip.is-picked { border-color: var(--load); box-shadow: 0 0 0 3px rgba(37,99,235,.16); }
 .chip:focus-visible { outline: 2px solid var(--load); outline-offset: 2px; }
 .day.is-target { border-style: dashed; border-color: var(--load); cursor: pointer; }
-.day.is-target:hover { background: #F2F6FF; }
+.day.is-target:hover { background: var(--tint-load); }
 .chip-name { font: 600 .78rem/1.25 var(--body); color: var(--ink); }
 .chip-meta { display: flex; gap: .4rem; font: 500 .66rem/1 var(--mono); color: var(--muted); }
 .chip-moved { font: 600 .6rem/1 var(--mono); text-transform: uppercase; letter-spacing: .05em; color: var(--load); }
@@ -434,6 +567,149 @@ ul.notes li { margin-bottom: .3rem; }
 .session-goal { margin: 0; font-size: .84rem; color: var(--muted); }
 .session-outdoor { margin: .35rem 0 0; font-size: .84rem; color: var(--ink-soft); }
 
+
+/* --- status chip ----------------------------------------------------- */
+/* The one persistent number now carries two facts: threshold, and what state
+   your form is in. It navigates, so it is a button. */
+.ftp-chip {
+  appearance: none; cursor: pointer;
+  border: 1px solid transparent;
+  transition: box-shadow .15s, transform .12s;
+}
+.ftp-chip:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+.ftp-chip:focus-visible { outline: 2px solid var(--load); outline-offset: 2px; }
+.form-dot {
+  width: .5rem; height: .5rem; border-radius: 100px; flex: none;
+  margin-left: .35rem; background: currentColor; opacity: .55;
+}
+.form-dot-fresh   { background: var(--fresh);  opacity: 1; }
+.form-dot-signal  { background: var(--signal); opacity: 1; }
+.form-dot-warn    { background: var(--warn);   opacity: 1; }
+.form-value { font: 600 .78rem/1 var(--mono); opacity: .85; }
+
+/* --- tab unread dot -------------------------------------------------- */
+/* A state, never decoration: it means something is waiting on that tab and it
+   disappears the moment it is dealt with. */
+.tab { display: inline-flex; align-items: center; gap: .35rem; position: relative; }
+.tab-dot {
+  width: .4rem; height: .4rem; border-radius: 100px; flex: none;
+  background: var(--power);
+}
+.tab[data-tab="ride"]  .tab-dot { background: var(--power); }
+.tab[data-tab="today"] .tab-dot { background: var(--fresh); }
+
+/* --- stat hierarchy and glossary ------------------------------------- */
+/* One stat in a row leads. Five things at equal weight is nothing to act on. */
+.stat-lead { grid-column: span 2; background: var(--surface-3); border: 1px solid var(--line); }
+.stat-lead .stat-value { font-size: 2.3rem; }
+@media (max-width: 460px) { .stat-lead { grid-column: span 1; } }
+
+.stat-label-define {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: 0 0 .4rem; text-align: left;
+  font: 600 .66rem/1 var(--mono); letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-label-define:hover { color: var(--ink); }
+.stat-label-define:focus-visible { outline: 2px solid var(--load); outline-offset: 2px; border-radius: 3px; }
+.stat-define-mark {
+  display: grid; place-items: center; width: .85rem; height: .85rem;
+  border-radius: 100px; border: 1px solid var(--line-strong);
+  font-size: .58rem; line-height: 1;
+}
+.stat-def {
+  margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--line);
+  font-size: .78rem; line-height: 1.45; color: var(--ink-soft);
+}
+
+/* --- check-in strip -------------------------------------------------- */
+/* What the check-in collapses to once today is answered. Not a card: the
+   session card is the thing worth reading, and this is a receipt. */
+.checkin-strip {
+  display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  padding: .55rem .9rem;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 100px;
+}
+.checkin-strip-label {
+  font: 600 .66rem/1 var(--mono); letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted);
+}
+.checkin-strip-values { display: flex; gap: .8rem; flex-wrap: wrap; margin-right: auto; }
+.checkin-strip-item { display: inline-flex; align-items: baseline; gap: .3rem; }
+.checkin-strip-key { font: 600 .66rem/1 var(--mono); color: var(--muted); }
+.checkin-strip-num { font: 600 .88rem/1 var(--mono); color: var(--ink); }
+
+/* --- narration loading ----------------------------------------------- */
+/* The template is a valid answer, not a placeholder, so it renders above this
+   and this sits underneath explaining what is still coming. */
+.prose-today { font-size: .92rem; }
+.prose-pending {
+  margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--line);
+}
+.prose-pending-copy { margin: 0 0 .7rem; font-size: .8rem; color: var(--muted); }
+.skeleton { display: flex; flex-direction: column; gap: .45rem; }
+.skeleton-line {
+  display: block; height: .7rem; width: 100%; border-radius: 100px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s linear infinite;
+}
+@keyframes skeleton-sweep { to { background-position: -200% 0; } }
+.prose-progress {
+  height: .25rem; margin-top: .7rem; border-radius: 100px;
+  background: var(--surface-2); overflow: hidden;
+}
+.prose-progress-fill {
+  display: block; height: 100%; width: 0; border-radius: 100px;
+  background: var(--power); transition: width .3s linear;
+}
+
+/* --- recent rides ---------------------------------------------------- */
+.ridepicker { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .3rem; scrollbar-width: thin; }
+.ridepick {
+  appearance: none; cursor: pointer; flex: none; text-align: left;
+  display: flex; flex-direction: column; gap: .2rem;
+  padding: .5rem .75rem; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--line);
+  transition: border-color .15s, background .15s;
+}
+.ridepick:hover { border-color: var(--line-strong); }
+.ridepick:focus-visible { outline: 2px solid var(--load); outline-offset: 2px; }
+.ridepick.is-active { border-color: var(--power); background: var(--tint-power); }
+.ridepick-date { font: 600 .76rem/1 var(--mono); color: var(--ink); white-space: nowrap; }
+.ridepick-type { font: 500 .68rem/1 var(--body); color: var(--muted); white-space: nowrap; }
+
+/* --- batch upload ---------------------------------------------------- */
+.batch {
+  padding: 1.25rem; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.batch-label { font: 500 .88rem/1.4 var(--body); color: var(--ink-soft); margin-bottom: .7rem; }
+.batch-bar { height: .3rem; border-radius: 100px; background: var(--surface-2); overflow: hidden; }
+.batch-fill {
+  display: block; height: 100%; width: 0; border-radius: 100px;
+  background: var(--power); transition: width .3s ease;
+}
+.batch-log { list-style: none; margin: .9rem 0 0; padding: 0; font: 500 .78rem/1.6 var(--mono); }
+.batch-ok { color: var(--ink-soft); }
+.batch-ok::before { content: '✓'; color: var(--good); margin-right: .5rem; }
+.batch-fail { color: var(--warn); }
+.batch-fail::before { content: '×'; margin-right: .5rem; }
+
+/* --- toast action ---------------------------------------------------- */
+.toast { display: flex; align-items: center; gap: .9rem; }
+.toast-text { flex: 1; }
+.toast-action {
+  appearance: none; cursor: pointer; flex: none;
+  background: none; border: 1px solid currentColor; color: inherit;
+  border-radius: 100px; padding: .25rem .7rem;
+  font: 700 .74rem/1 var(--body); letter-spacing: .02em;
+}
+.toast-action:hover { background: rgba(255,255,255,.14); }
+.toast-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
 /* --- empty state ----------------------------------------------------- */
 .empty {
   text-align: center; padding: 3rem 1.5rem;
@@ -446,7 +722,7 @@ ul.notes li { margin-bottom: .3rem; }
 /* --- toast ----------------------------------------------------------- */
 .toast {
   position: fixed; left: 50%; bottom: 1.5rem; transform: translate(-50%, 1.5rem);
-  background: var(--ink); color: #fff;
+  background: var(--ink); color: var(--paper);
   padding: .7rem 1.1rem; border-radius: 100px;
   font: 500 .86rem/1.35 var(--body); max-width: min(30rem, calc(100vw - 2rem));
   box-shadow: var(--shadow-lift); opacity: 0; pointer-events: none;
@@ -454,13 +730,13 @@ ul.notes li { margin-bottom: .3rem; }
 }
 .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
 .toast-warn { background: var(--warn); }
-.toast-signal { background: #8A5A00; }
+.toast-signal { background: var(--ink-signal); }
 
 /* --- boot error ------------------------------------------------------ */
 #boot-error {
   max-width: 68rem; margin: 1.25rem auto 0; padding: 1rem 1.25rem;
-  background: #FDEEEB; border: 1px solid #F5CDC5; border-radius: var(--radius);
-  color: #8A2A1C;
+  background: var(--tint-warn); border: 1px solid var(--tint-warn-line);
+  border-radius: var(--radius); color: var(--ink-warn-deep);
 }
 #boot-error h3 { margin: 0 0 .35rem; font: 700 .95rem/1.2 var(--display); }
 #boot-error pre { margin: .5rem 0 0; font: .75rem/1.5 var(--mono); white-space: pre-wrap; }
@@ -476,16 +752,60 @@ ul.notes li { margin-bottom: .3rem; }
   .calendar { grid-template-columns: repeat(2, 1fr); }
   .day { min-height: 6.5rem; }
   .stat-value { font-size: 1.4rem; }
+  .stat-lead .stat-value { font-size: 1.95rem; }
   main { padding: 1rem 1rem 5rem; }
-  .appbar-inner, #tabs { padding-left: 1rem; padding-right: 1rem; }
+  .appbar-inner { padding-left: 1rem; padding-right: 1rem; padding-bottom: .85rem; }
+
+  /* Navigation moves to the bottom.
+
+     As a scrolling strip inside a sticky header it had two problems on a
+     phone: the active tab could scroll out of view, so you could not see
+     where you were; and the header ate vertical space on the tab that most
+     needs it. Four equal columns at the bottom fixes both, is inside thumb
+     reach, and `main` already reserved 5rem of bottom padding here, so the
+     space was already accounted for. */
+  #tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    max-width: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 0; overflow: visible;
+    background: var(--bar);
+    backdrop-filter: saturate(1.4) blur(12px);
+    border-top: 1px solid var(--line);
+    /* Clears the home indicator on iOS without leaving a gap on Android. */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .appbar { border-bottom: 1px solid var(--line); }
+  .tab {
+    justify-content: center;
+    min-height: 48px;            /* the touch target floor */
+    padding: .55rem .35rem;
+    border-radius: 0;
+    border-bottom: 0;
+    border-top: 2.5px solid transparent;
+    font-size: .8rem;
+  }
+  .tab:hover { background: none; }
+  .tab.is-active { border-bottom-color: transparent; border-top-color: var(--power); }
+  .tab:focus-visible { outline-offset: -3px; }
+
+  /* Stacked, not inline: at four columns there is no room beside the label. */
+  .tab-dot { position: absolute; top: .5rem; right: 50%; margin-right: -1.6rem; }
+
+  /* The toast has to clear the bar it would otherwise sit on top of. */
+  .toast { bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
 }
 @media (max-width: 460px) {
   .calendar { grid-template-columns: 1fr; }
+  .tab { font-size: .74rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   html { scroll-behavior: auto; }
+  /* Killing the animation leaves the sweep gradient frozen mid-stripe, which
+     reads as a rendering fault. Flatten it to a plain block instead. */
+  .skeleton-line { background: var(--surface-2); }
 }
 </style>
 </head>
@@ -519,13 +839,13 @@ ul.notes li { margin-bottom: .3rem; }
   // are missing, with the URL that was tried.
   (function () {
     var MODULES = [
-      'app.js', 'ui.js', 'charts.js', 'store.js',
+      'app.js', 'ui.js', 'charts.js', 'store.js', 'checkin.js',
       'view-profile.js', 'view-analyse.js', 'view-history.js', 'view-plan.js',
       'workouts.js', 'athlete.js', 'classify.js', 'execution.js', 'ftp.js',
-      'load.js', 'planner.js', 'proposals.js', 'readiness.js', 'standing.js',
-      'thresholds.js', 'verdict.js', 'fit.worker.js', 'fitparser.js',
-      'ingest.js', 'metrics.js', 'guard.js', 'narration.js', 'narrate.js',
-      'webllm.js'
+      'load.js', 'planner.js', 'phase.js', 'prescribe.js', 'proposals.js',
+      'readiness.js', 'standing.js', 'thresholds.js', 'verdict.js',
+      'fit.worker.js', 'fitparser.js', 'ingest.js', 'metrics.js', 'guard.js',
+      'narration.js', 'narration-view.js', 'narrate.js', 'webllm.js'
     ];
 
     var shown = false;

@@ -37,6 +37,120 @@ export function buildNarrationPrompt(v) {
   };
 }
 
+// --- today ----------------------------------------------------------------
+//
+// The ride verdict asks the model to hold a whole session's analysis in view.
+// Today asks it to explain one decision. That is the easier job and the more
+// useful paragraph, and it is squarely inside a 1B model's reliable range:
+// one decision, one reason, one paragraph.
+
+/**
+ * A verdict-shaped view of suggestToday()'s output, so guard.js can derive the
+ * allowlist from exactly the fields the prompt exposes without needing to know
+ * anything about plans. The shim is the contract — if a number is not on here,
+ * the model may not say it.
+ */
+export function todayShim(today, { readiness, load } = {}) {
+  // The value AND its effect. The effect is the reasoning — "targets about
+  // 480 TSS this week" is the entire point of the phase step, and a model
+  // given only "build, week 2" has nothing to explain. Folding it in here
+  // also puts its numbers on the allowlist, which is correct: the engine
+  // wrote them, so the model may repeat them.
+  const evidence = today.trace.map((t) => ({
+    label: t.step,
+    value: `${t.value} — ${t.effect}`,
+  }));
+
+  if (today.session) {
+    evidence.push({ label: 'Duration', value: `${today.session.durationMin} min` });
+    const tss = Math.round(today.prescription?.tss ?? today.session.tss);
+    if (Number.isFinite(tss)) evidence.push({ label: 'Training stress', value: `${tss} TSS` });
+    if (today.prescription?.targetWatts) {
+      evidence.push({ label: 'Target power', value: `${Math.round(today.prescription.targetWatts)}W` });
+    }
+  }
+
+  return {
+    keyEvidence: evidence,
+    // The headline names the session, and the model is asked to name it too.
+    // Several SYSTM workouts have cardinals in their names ("Nine Hammers"),
+    // so without this the guard rejects the model for repeating the one string
+    // it was explicitly given.
+    allowedText: [today.headline, today.session?.systm].filter(Boolean),
+    // The engine's own prose about this day, which the model may quote numbers
+    // from because the engine put them there.
+    executionFlags: today.note ? [{ code: 'plan_note', detail: today.note }] : [],
+    readiness: readiness || { flag: 'no_data', notes: [] },
+    load: { ctl: load?.ctl ?? null, tsb: load?.tsb ?? null },
+  };
+}
+
+export function buildTodayPrompt(today, shim) {
+  const evidence = shim.keyEvidence.map((e) => `- ${e.label}: ${e.value}`).join('\n');
+
+  return {
+    system: [
+      'You are a cycling coach writing directly to the athlete, in second person.',
+      "You will be given today's session and the reasoning that produced it. Your job is ONLY to express that reasoning as prose.",
+      'Rules you must not break:',
+      '1. Use ONLY the numbers listed under REASONING. Never introduce a number that is not there.',
+      '2. Do not decide anything. The session has already been chosen; explain why, do not re-argue it.',
+      '3. Do not flatter and do not motivate. Say what today is for and what would undo it.',
+      '4. Write a single paragraph of 50-110 words. No headings, no bullet points, no markdown.',
+    ].join('\n'),
+    user: [
+      `TODAY: ${today.headline}`,
+      today.wasOverridden ? 'NOTE: the athlete moved this session here themselves.' : '',
+      today.alreadyRidden ? 'NOTE: this day has already been ridden.' : '',
+      '',
+      'REASONING:',
+      evidence,
+      '',
+      shim.executionFlags.length ? `PLAN NOTE: ${shim.executionFlags[0].detail}` : '',
+      `READINESS: ${shim.readiness.flag}${shim.readiness.notes?.length ? ` (${shim.readiness.notes.join('; ')})` : ''}`,
+      '',
+      'Write the paragraph now.',
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+/**
+ * The deterministic answer. Always correct, always available, never empty —
+ * and it is what the athlete reads while the model loads, so it has to be
+ * prose rather than a data dump.
+ *
+ * The trace steps carry effects written as fragments of different shapes
+ * ("no objection", "targets about 480 TSS this week", "within the normal
+ * training range"). Joining them with a single connective produces nonsense,
+ * so each step is rendered as its own clause with the effect in apposition,
+ * which reads correctly whatever shape the fragment takes.
+ */
+export function renderTodayTemplate(today) {
+  const lines = [];
+
+  const opener = today.session
+    ? `${today.headline}: ${today.session.durationMin} minutes, about ${Math.round(today.prescription?.tss ?? today.session.tss)} TSS.`
+    : `${today.headline}.`;
+  lines.push(opener);
+
+  if (today.alreadyRidden) {
+    lines.push('You have already ridden today, so this is a report rather than a prescription.');
+  }
+  if (today.wasOverridden) {
+    lines.push("This is your own edit rather than the engine's pick, and it stays until you reset the week.");
+  }
+
+  const clauses = today.trace.map((t) => {
+    const step = String(t.step).replace(/_/g, ' ');
+    const value = String(t.value).replace(/_/g, ' ');
+    return `${step} ${value} — ${t.effect}`;
+  });
+  if (clauses.length) lines.push(`Why: ${clauses.join('; ')}.`);
+
+  if (today.note) lines.push(today.note);
+  return lines.join(' ');
+}
+
 const VERDICT_PHRASES = {
   executed_well: 'You hit the target for this one.',
   productive_but_ragged:

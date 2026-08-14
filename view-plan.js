@@ -9,13 +9,15 @@
 // consecutive days without being told. The app does not block it, because it
 // is the athlete's week, but it says what it thinks.
 
-import { store } from './store.js';
+import { store, todayIso } from './store.js';
 import { deriveAthlete } from './athlete.js';
 import { computeLoad, computePhenotype, aggregateBestPowers } from './load.js';
 import { computeReadiness } from './readiness.js';
 import { estimateFtp } from './ftp.js';
 import { planWeek, suggestToday } from './planner.js';
 import { WORKOUTS, ADAPTATIONS } from './workouts.js';
+import { checkInCard, baselineNote } from './checkin.js';
+import { writeTodayNarration } from './narration-view.js';
 import {
   el, card, stat, statRow, badge, button, toast, note, fmt, clear, empty,
   ADAPTATION_TONE,
@@ -56,10 +58,33 @@ export function renderPlan(root, ctx) {
   const plan = planWeek(planCtx);
   const today = suggestToday({ ...planCtx, plan });
 
+  // --- check-in ------------------------------------------------------
+  // Unanswered, it is the first thing on screen: readiness is the veto term in
+  // everything below it, so asking after showing the answer would be asking
+  // too late. Answered, it collapses to a strip and moves under the session
+  // card, which is then the thing worth reading first.
+  const wellness = store.wellness();
+  const answered = wellness.some((w) => w.date === todayIso());
+  const checkIn = checkInCard(ctx, wellness);
+  if (!answered) root.append(checkIn);
+
   // --- today ---------------------------------------------------------
   // The headline. A week shape answers "what does this block look like"; this
   // answers the question the athlete actually opened the app with.
-  root.append(todayCard(today));
+  root.append(todayCard(today, { readiness, load, rides, wellness }));
+  if (answered) root.append(checkIn);
+
+  // With a threshold but no rides, the plan is built entirely from the
+  // declared numbers and the phase model. That is a real answer, not an error,
+  // and saying so beats letting the athlete wonder what it is missing.
+  if (!rides.length) {
+    root.append(empty(
+      'No rides recorded yet',
+      'Everything above comes from your threshold and where you are in the block — it can prescribe a session, but not judge how the last ones went. Add a ride and load, form and readiness all start working.',
+      button('Add a ride', { variant: 'primary', onClick: () => ctx.go('ride') }),
+    ));
+    return;
+  }
 
   // --- summary -------------------------------------------------------
   const head = card('This week', { hint: fmt.title(readiness.flag) });
@@ -242,7 +267,7 @@ export function renderPlan(root, ctx) {
  * made. The trace is shown rather than summarised because "why" is the part
  * an athlete argues with, and an argument needs the steps.
  */
-function todayCard(today) {
+function todayCard(today, { readiness, load, rides, wellness } = {}) {
   const c = card('Today', {
     hint: today.alreadyRidden ? 'Already ridden' : today.wasOverridden ? 'Your edit' : null,
   });
@@ -268,6 +293,14 @@ function todayCard(today) {
     ));
   }
 
+  // One decision, one reason, one paragraph — squarely inside what a 1B model
+  // narrates reliably, and the tab that most benefits from a sentence of
+  // explanation. The template renders immediately; the model's prose replaces
+  // it if and when it arrives.
+  const prose = el('div', 'prose prose-today');
+  c.body.append(prose);
+  writeTodayNarration(prose, today, { readiness, load });
+
   const ul = el('ul', 'trace');
   for (const t of today.trace) {
     const li = el('li');
@@ -279,6 +312,13 @@ function todayCard(today) {
     ul.append(li);
   }
   c.body.append(ul);
+
+  // Says what the readiness step is actually running on. Without it the trace
+  // line reads as a measurement when it is a fallback, and the athlete has no
+  // reason to believe the check-in habit is buying them anything.
+  const baseline = baselineNote(readiness, wellness);
+  if (baseline && rides?.length) c.body.append(note(baseline));
+
   return c;
 }
 

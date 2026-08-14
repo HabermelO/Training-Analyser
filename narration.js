@@ -8,16 +8,28 @@ export const NARRATION_SOURCE = {
 };
 
 export async function narrate(v, opts = {}) {
-  const { generate, timeoutMs = 20000, repair = true, onEvent = () => {} } = opts;
+  const {
+    generate, timeoutMs = 20000, repair = true, onEvent = () => {},
+    // Length bounds belong to the caller, not the guard: a ride verdict is a
+    // 150-word paragraph and a daily note is an 80-word one, and judging both
+    // against one range rejects a correct answer for being the right size.
+    guard: guardOpts = {},
+    buildPrompt = buildNarrationPrompt,
+    template = renderTemplate,
+  } = opts;
 
-  const digest = buildDigest(v);
+  // The digest is a ride-shaped artefact (it keys off v.ride). Callers that
+  // narrate something other than a ride verdict have no digest to build, and
+  // failing to build one must not fail the narration.
+  let digest = null;
+  try { digest = v.ride ? buildDigest(v) : null; } catch { digest = null; }
   const fallback = (reason, violations = []) => ({
-    text: renderTemplate(v), source: NARRATION_SOURCE.TEMPLATE, reason, violations, digest,
+    text: template(v), source: NARRATION_SOURCE.TEMPLATE, reason, violations, digest,
   });
 
   if (typeof generate !== 'function') return fallback('no_generator');
 
-  const prompt = buildNarrationPrompt(v);
+  const prompt = buildPrompt(v);
 
   let first;
   try {
@@ -27,7 +39,7 @@ export async function narrate(v, opts = {}) {
     return fallback(e?.message === 'timeout' ? 'timeout' : 'generation_failed');
   }
 
-  const check = validateNarration(first, v);
+  const check = validateNarration(first, v, guardOpts);
   if (check.ok && !check.violations.length) {
     return { text: first.trim(), source: NARRATION_SOURCE.MODEL, violations: [], digest };
   }
@@ -50,7 +62,7 @@ export async function narrate(v, opts = {}) {
     return fallback('repair_failed', check.violations);
   }
 
-  const recheck = validateNarration(second, v);
+  const recheck = validateNarration(second, v, guardOpts);
   if (recheck.ok) {
     return { text: second.trim(), source: NARRATION_SOURCE.MODEL_REPAIRED, violations: recheck.violations, digest };
   }

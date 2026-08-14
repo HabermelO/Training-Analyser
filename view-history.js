@@ -1,18 +1,22 @@
-// History: the long view. One chart, several series, each in the colour that
+// Trends: the long view. One chart, several series, each in the colour that
 // metric carries everywhere else in the app.
+//
+// Named for what is on screen. "History" promised a log and delivered a model:
+// almost everything here is forward-looking inference — CTL, ATL, TSB,
+// efficiency drift, intensity distribution — with the ride log at the bottom.
 //
 // The series are split across two axes on purpose. Fitness, fatigue and form
 // share a unit and belong together; heart rate, threshold and efficiency do
 // not, and plotting them on one linear axis would imply a comparison that does
 // not exist. Anything on the right axis says so in the legend.
 
-import { store, todayIso } from './store.js';
+import { store } from './store.js';
 import { computeLoad, intensityDistribution } from './load.js';
 import { deriveAthlete } from './athlete.js';
 import { computeReadiness } from './readiness.js';
-import { timeChart, sparkline, distributionBar } from './charts.js';
+import { timeChart, distributionBar } from './charts.js';
 import {
-  el, card, stat, statRow, field, numberInput, button, toast, badge,
+  el, card, stat, statRow, button, toast, badge,
   fmt, clear, empty, note,
 } from './ui.js';
 
@@ -26,8 +30,19 @@ const SERIES = [
   { key: 'ef', label: 'Power per beat', colour: 'var(--effic)', axis: 'right' },
 ];
 
-const DEFAULT_ON = new Set(['ctl', 'atl', 'tsb']);
-const active = new Set(DEFAULT_ON);
+const DEFAULT_ON = ['ctl', 'atl', 'tsb'];
+
+// Persisted, not module-level. A Set that resets on reload means an athlete
+// who cares about efficiency has to re-select it every single visit, which
+// teaches them the chart is not theirs to configure.
+const PREF_KEY = 'trendSeries';
+function activeSeries() {
+  const saved = store.prefs()[PREF_KEY];
+  const keys = Array.isArray(saved) && saved.length
+    ? saved.filter((k) => SERIES.some((s) => s.key === k))
+    : DEFAULT_ON;
+  return new Set(keys.length ? keys : DEFAULT_ON);
+}
 
 export function renderHistory(root, ctx) {
   clear(root);
@@ -35,28 +50,34 @@ export function renderHistory(root, ctx) {
   const wellness = store.wellness();
   const profile = deriveAthlete(rides, store.profile());
 
-  root.append(checkInCard(ctx, wellness));
-
   if (!rides.length) {
     root.append(empty(
       'No rides yet',
-      'Upload a .fit file on the Analyse tab and your history starts building from there.',
-      button('Go to Analyse', { variant: 'primary', onClick: () => ctx.go('analyse') }),
+      'Add a .fit file on the Ride tab and your trends start building from there.',
+      button('Go to Ride', { variant: 'primary', onClick: () => ctx.go('ride') }),
     ));
     return;
   }
+
+  const active = activeSeries();
 
   const load = computeLoad(rides, new Date());
   const readiness = computeReadiness(wellness);
 
   // --- headline ------------------------------------------------------
   const now = card('Where you are today');
+  // Form leads. Five stats at equal weight is five things to act on, which is
+  // none — and of these, form is the one that changes what you do today. The
+  // rest sit a step down. Labels are the tap target for a definition, because
+  // the app models these carefully and until now explained them in six words.
   now.body.append(statRow([
-    stat('Fitness', fmt.dec(load.ctl), { tone: 'ctl', note: 'CTL, 42-day load' }),
-    stat('Fatigue', fmt.dec(load.atl), { tone: 'atl', note: 'ATL, 7-day load' }),
-    stat('Form', fmt.signed(load.tsb), { tone: 'tsb', note: fmt.title(load.state) }),
-    stat('Last 7 days', fmt.int(load.last7dTss), { tone: 'tss', note: 'TSS' }),
-    stat('Readiness', fmt.title(readiness.flag), {}),
+    stat('Form', fmt.signed(load.tsb), {
+      tone: 'tsb', lead: true, define: 'tsb', note: fmt.title(load.state),
+    }),
+    stat('Fitness', fmt.dec(load.ctl), { tone: 'ctl', define: 'ctl', note: 'CTL, 42-day load' }),
+    stat('Fatigue', fmt.dec(load.atl), { tone: 'atl', define: 'atl', note: 'ATL, 7-day load' }),
+    stat('Last 7 days', fmt.int(load.last7dTss), { tone: 'tss', define: 'tss', note: 'TSS' }),
+    stat('Readiness', fmt.title(readiness.flag), { define: 'readiness' }),
   ]));
   if (load.rampWarning) {
     now.body.append(note(`Weekly load is up ${load.rampPct}% on the previous week. That is a fast ramp — worth easing before it becomes a hole.`, 'signal'));
@@ -116,8 +137,12 @@ export function renderHistory(root, ctx) {
     chip.addEventListener('click', () => {
       if (active.has(s.key)) active.delete(s.key); else active.add(s.key);
       chip.classList.toggle('is-on');
+      chip.setAttribute('aria-pressed', String(active.has(s.key)));
+      store.setPref(PREF_KEY, [...active]);
       redraw();
     });
+    chip.type = 'button';
+    chip.setAttribute('aria-pressed', String(active.has(s.key)));
     if (!has) chip.title = 'No data for this yet';
     legend.append(chip);
   }
@@ -185,61 +210,6 @@ export function renderHistory(root, ctx) {
     list.body.append(el('div', 'actions').appendChild(more).parentNode);
   }
   root.append(list);
-}
-
-function checkInCard(ctx, wellness) {
-  const today = todayIso();
-  const existing = wellness.find((w) => w.date === today);
-
-  const c = card('Today', {
-    hint: existing ? 'Saved — change it any time' : 'Takes ten seconds',
-  });
-
-  const hrv = numberInput('w-hrv', { value: existing?.hrv ?? '', min: 10, max: 200 });
-  const rhr = numberInput('w-rhr', { value: existing?.rhr ?? '', min: 25, max: 120 });
-  const sleep = numberInput('w-sleep', { value: existing?.sleepHours ?? '', min: 0, max: 14, step: 0.1 });
-  const mood = numberInput('w-mood', { value: existing?.mood ?? '', min: 1, max: 10 });
-
-  const grid = el('div', 'field-grid field-grid-4');
-  grid.append(
-    field('HRV', hrv, 'From your watch or strap'),
-    field('Resting HR', rhr, 'On waking'),
-    field('Sleep (h)', sleep),
-    field('How you feel', mood, '1 to 10'),
-  );
-  c.body.append(grid);
-
-  const spark = el('div', 'spark-row');
-  const recent = wellness.slice(-21);
-  if (recent.length > 2) {
-    spark.append(el('span', 'spark-label', 'HRV'));
-    spark.append(sparkline(recent.map((w) => w.hrv), 'var(--hrv)'));
-    spark.append(el('span', 'spark-label', 'Resting HR'));
-    spark.append(sparkline(recent.map((w) => w.rhr), 'var(--cardiac)'));
-    c.body.append(spark);
-  }
-
-  c.body.append(el('div', 'actions').appendChild(button('Save today', {
-    variant: 'primary',
-    onClick: () => {
-      const entry = {
-        date: today,
-        hrv: Number(hrv.value) || null,
-        rhr: Number(rhr.value) || null,
-        sleepHours: Number(sleep.value) || null,
-        mood: Number(mood.value) || null,
-      };
-      if (!entry.hrv && !entry.rhr && !entry.sleepHours && !entry.mood) {
-        return toast('Nothing to save yet — fill in at least one.', 'warn');
-      }
-      store.setWellness(entry);
-      toast('Saved');
-      ctx.refresh();
-    },
-  })).parentNode);
-
-  c.body.append(note('Readiness needs about a week of entries before it can judge today against anything.'));
-  return c;
 }
 
 /**
